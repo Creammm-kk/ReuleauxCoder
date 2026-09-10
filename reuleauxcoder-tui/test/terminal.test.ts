@@ -7,3 +7,10 @@ import {python} from './helpers.js';
 test('launcher owns a real PTY and restores the terminal on exit', {skip: process.platform === 'win32'}, async () => {
   await promisify(execFile)(python, [fileURLToPath(new URL('./terminal_smoke.py', import.meta.url)), process.execPath], {timeout: 30_000});
 });
+
+test('bundled TUI runs menus, chat and approvals without node_modules', {skip: process.platform === 'win32'}, async () => {
+  await promisify(execFile)(python, [
+    fileURLToPath(new URL('./terminal_smoke.py', import.meta.url)), process.execPath,
+    fileURLToPath(new URL('../../reuleauxcoder/_tui/cli.mjs', import.meta.url)),
+  ], {timeout: 30_000});
+});

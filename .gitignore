@@ -15,6 +15,7 @@ venv/
 dist/
 .pytest_cache/
 .rcoder/
+reuleauxcoder/_tui/
 docs/rfc/
 artifacts/
 references/

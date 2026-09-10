@@ -35,6 +35,12 @@ dependencies = [
 [tool.hatch.build.targets.wheel]
 packages = ["reuleauxcoder"]
 
+[tool.hatch.build]
+artifacts = ["reuleauxcoder/_tui/**"]
+
+[tool.hatch.build.targets.sdist]
+exclude = ["**/node_modules/**", "/reuleauxcoder-agent/reuleauxcoder-agent", "/reuleauxcoder-agent/*.exe"]
+
 [dependency-groups]
 dev = [
     "pytest>=9.0.2",
@@ -44,7 +50,9 @@ dev = [
 dev = ["pytest>=7.0"]
 
 [project.scripts]
-rcoder = "reuleauxcoder.interfaces.cli.main:main"
+rcoder = "reuleauxcoder.interfaces.launcher:main"
+rcoder-cli = "reuleauxcoder.interfaces.cli.main:main"
+rcoder-tui = "reuleauxcoder.interfaces.launcher:tui_main"
 
 [project.urls]
 Homepage = "https://github.com/RC-CHN/ReuleauxCoder"

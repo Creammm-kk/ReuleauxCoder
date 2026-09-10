@@ -46,10 +46,17 @@ def read_until(value, timeout=10):
 
 
 with tempfile.TemporaryDirectory(prefix="rcoder-tui-pty-") as cwd:
+    command = (
+        [sys.argv[2]]
+        if sys.argv[1] == "--launcher"
+        else [
+            sys.argv[1],
+            sys.argv[2] if len(sys.argv) > 2 else str(package / "dist/cli.js"),
+        ]
+    )
     child = subprocess.Popen(
         [
-            sys.argv[1],
-            str(package / "dist/cli.js"),
+            *command,
             "--backend",
             sys.executable,
             "--",

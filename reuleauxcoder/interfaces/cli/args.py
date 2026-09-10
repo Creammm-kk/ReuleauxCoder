@@ -5,16 +5,21 @@ import argparse
 from reuleauxcoder import __version__
 
 
-def parse_args():
+def create_parser(*, prog="rcoder"):
     parser = argparse.ArgumentParser(
-        prog="rcoder",
+        prog=prog,
         description="ReuleauxCoder terminal-native coding agent.",
+        allow_abbrev=False,
     )
     parser.add_argument("-c", "--config", help="Path to config.yaml")
     parser.add_argument("-m", "--model", help="Override model from config.yaml")
     parser.add_argument("-p", "--prompt", help="One-shot prompt (non-interactive mode)")
     parser.add_argument("-r", "--resume", metavar="ID", help="Resume a saved session")
-    parser.add_argument("--rpc-stdio", action="store_true", help="Run the JSON-RPC backend on stdin/stdout")
+    parser.add_argument(
+        "--rpc-stdio",
+        action="store_true",
+        help="Run the JSON-RPC backend on stdin/stdout",
+    )
     parser.add_argument(
         "--server",
         action="store_true",
@@ -23,4 +28,8 @@ def parse_args():
     parser.add_argument(
         "-v", "--version", action="version", version=f"%(prog)s {__version__}"
     )
-    return parser.parse_args()
+    return parser
+
+
+def parse_args():
+    return create_parser(prog="rcoder-cli").parse_args()
