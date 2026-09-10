@@ -224,7 +224,7 @@ export class TuiController extends EventEmitter {
       else if (this.session.state.stopping) await this.finish();
       else if (this.session.state.running && !this.session.fatal) {
         const result = await this.client.interrupt();
-        this.status = result.outcome === 'promoted' ? 'Applying queued steering; Ctrl+C again stops the turn.' : 'Stopping the turn…';
+        this.status = result.outcome === 'promoted' ? 'Applying queued steering; Ctrl+C again stops the turn.' : '';
       } else if (this.exitConfirm) await this.finish();
       else this.exitConfirm = true;
       this.changed(); return;

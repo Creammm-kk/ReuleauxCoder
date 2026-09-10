@@ -105,6 +105,8 @@ def test_backend_owns_interrupt_and_stop_state(runtime):
     assert runtime.client.interrupt()["outcome"] == "stop_requested"
     runtime.client.wait_idle()
     assert runtime.agent.stop_requested()
+    assert not runtime.client.state.running
+    assert not runtime.client.state.stopping
 
 
 def test_user_metadata_cannot_be_decoded_as_a_contract():

@@ -87,6 +87,21 @@ test('queued prompts and commands stay visible until the backend clears them', a
   assert.equal(c.composer.text, 'draft preserved');
 });
 
+test('stopped work returns to Ready and Ctrl+C resumes idle exit confirmation', async t => {
+  const b = await backend(); t.after(() => b.close());
+  const c = b.controller;
+  const app = render(<App controller={c}/>); t.after(() => app.cleanup());
+  await b.client.submit('wait');
+  await until(() => c.session.state.running);
+  await c.key('c', {ctrl: true});
+  await until(() => !c.session.state.running);
+  await until(() => app.lastFrame()?.includes('Ready') && !app.lastFrame()?.includes('Stopping'));
+  assert(!c.session.state.stopping);
+  await c.key('c', {ctrl: true});
+  assert(c.exitConfirm, 'Ctrl+C after stopping asks to exit instead of immediately shutting down');
+  assert(!c.closing);
+});
+
 test('Unicode editing and viewport folding retain complete output without terminal escapes', () => {
   let value = editor('中文👩🏽‍💻é');
   value = edit(value, '', {backspace: true});

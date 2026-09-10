@@ -148,7 +148,7 @@ class RuntimeServer:
                 agent_id=agent.agent_id,
                 session_generation=agent.session_generation,
                 running=self._running,
-                stopping=agent.stop_requested(),
+                stopping=self._running and agent.stop_requested(),
                 interrupt_pending=agent.round_interrupt_pending(),
                 queued_commands=self.commands.pending_commands,
                 queued_steering=tuple(agent.pending_user_steering()),
