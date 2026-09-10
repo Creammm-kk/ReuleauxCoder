@@ -170,9 +170,8 @@ def _handle_list_sessions(command, ctx) -> CommandEffect:
         ),
     )
     ctx.effect.open_view(
-        view.view_type,
+        view,
         title="Saved Sessions",
-        view_model=view,
         reuse_key=view.view_type,
     )
     return ctx.effect.finish(control="continue", state_changes=view.to_payload())
@@ -326,9 +325,8 @@ def _resume_session(command, ctx) -> CommandEffect:
         ),
     )
     ctx.effect.open_view(
-        transcript.view_type,
+        transcript,
         title="Recent Session Context",
-        view_model=transcript,
         reuse_key=transcript.view_type,
     )
 

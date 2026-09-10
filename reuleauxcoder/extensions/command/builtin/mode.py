@@ -64,9 +64,8 @@ def _handle_show_mode(command, ctx) -> CommandEffect:
     view = _build_mode_profiles_view(ctx.config, ctx.agent.active_mode)
 
     ctx.effect.open_view(
-        view.view_type,
+        view,
         title="Modes",
-        view_model=view,
         reuse_key="mode_profiles",
     )
 
@@ -114,9 +113,8 @@ def _handle_switch_mode(command, ctx) -> CommandEffect:
 
     view = _build_mode_profiles_view(ctx.config, ctx.agent.active_mode)
     ctx.effect.refresh_view(
-        view.view_type,
+        view,
         title="Modes",
-        view_model=view,
         reuse_key="mode_profiles",
     )
 

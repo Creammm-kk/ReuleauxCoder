@@ -53,16 +53,15 @@ _BUILTIN_COMMAND_FEATURES
 
 ```python
 ctx.effect.open_view(
-    view.view_type,
+    view,
     title="Modes",
-    view_model=view,
     reuse_key="mode_profiles",
 )
 return ctx.effect.finish(control="continue", state_changes=view.to_payload())
 ```
 
 需要更新现有视图时调用 `ctx.effect.refresh_view(...)`。它生成不抢占焦点的刷新请求。
-`view_type` 必须与 ViewModel 一致；ViewModel 提供 `to_payload()` 供状态投影使用。
+视图类型直接来自 ViewModel，调用方不再重复传入；ViewModel 提供 `to_payload()` 供状态投影使用。
 
 ## 交互面板由命令功能定义
 

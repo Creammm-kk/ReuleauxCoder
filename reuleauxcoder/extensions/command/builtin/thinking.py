@@ -29,7 +29,6 @@ from reuleauxcoder.domain.config.models import DEFAULT_REASONING_EFFORT_VALUES
 from reuleauxcoder.interfaces.events import UIEventKind
 
 _VALID_EFFORTS = frozenset({"low", "medium", "high"})
-_VALID_DISPLAY_MODES = frozenset({"quiet", "inline"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -150,9 +149,8 @@ def _handle_effort_show(_command, ctx) -> CommandEffect:
         ),
     )
     ctx.effect.open_view(
-        view.view_type,
+        view,
         title="Reasoning Effort",
-        view_model=view,
         reuse_key="thinking_effort",
     )
     return ctx.effect.finish(control="continue", state_changes=view.to_payload())

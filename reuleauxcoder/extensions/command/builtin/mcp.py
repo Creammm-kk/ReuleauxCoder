@@ -87,9 +87,8 @@ def _handle_show_mcp_servers(command, ctx) -> CommandEffect:
     view = build_mcp_servers_view(ctx.config, ctx.agent)
     payload = view.to_payload()
     ctx.effect.open_view(
-        view.view_type,
+        view,
         title="MCP Servers",
-        view_model=view,
         reuse_key="mcp_servers",
     )
     return ctx.effect.finish(control="continue", state_changes=payload)
@@ -136,9 +135,8 @@ def _handle_toggle_mcp_server(command, ctx) -> CommandEffect:
 
     view = build_mcp_servers_view(ctx.config, ctx.agent)
     ctx.effect.refresh_view(
-        view.view_type,
+        view,
         title="MCP Servers",
-        view_model=view,
         reuse_key="mcp_servers",
     )
     return ctx.effect.finish(control="continue", state_changes=view.to_payload())

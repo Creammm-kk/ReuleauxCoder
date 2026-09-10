@@ -500,7 +500,6 @@ def test_interactive_failure_falls_back_to_passive_projection() -> None:
         kind=UIEventKind.VIEW,
         payload=ViewEventPayload(
             action="open",
-            view_type="help",
             title="Help",
             view_model=HelpViewModel(sections=()),
         ),

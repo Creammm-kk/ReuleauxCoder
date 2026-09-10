@@ -127,6 +127,8 @@ Current CLI behavior:
 
 `app/commands/` contains the registry, parser, help generation, typed effects and shared view models. Built-ins expose explicit `register_actions` and optional `command_panel_spec` contributions under `extensions/command/builtin/`. The single `_BUILTIN_COMMAND_FEATURES` catalog pairs each feature's actions with its panel; the action loader and panel registry derive their stable order from that catalog. Keep command-specific interaction definitions in their feature modules and framework-specific rendering, focus and keyboard handling in interface adapters.
 
+Command effects and UI view events derive their view type from the ViewModel. Pass the model to `open_view` or `refresh_view`; do not maintain a separate copy of its type in the request.
+
 Scope labels in help:
 
 - `[session]`: current runtime/session overlay.

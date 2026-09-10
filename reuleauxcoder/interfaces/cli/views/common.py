@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from rich.markdown import Markdown
 from rich.markup import escape
 from rich.table import Table
 from rich.text import Text
@@ -15,18 +14,6 @@ def stop_stream_and_clear(renderer) -> None:
     close_active = getattr(renderer, "_close_active_content_block", None)
     if callable(close_active):
         close_active()
-
-
-def render_markdown_panel(
-    renderer, *, markdown_text: str, title: str, border_style: str = "blue"
-) -> bool:
-    """Render titled markdown without width-dependent box borders."""
-    if not markdown_text:
-        return False
-    stop_stream_and_clear(renderer)
-    render_heading(renderer, title)
-    renderer.console.print(Markdown(markdown_text))
-    return True
 
 
 def render_heading(

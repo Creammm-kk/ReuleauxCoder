@@ -189,9 +189,8 @@ def _handle_list(command, ctx) -> CommandEffect:
         session_generation=generation,
     )
     ctx.effect.open_view(
-        view.view_type,
+        view,
         title=("Stop a Process" if command.stop_picker else "Process Sessions"),
-        view_model=view,
         reuse_key=view.view_type,
     )
     return ctx.effect.finish(control="continue", state_changes=view.to_payload())
@@ -376,9 +375,8 @@ def _refresh(
         session_generation=generation,
     )
     ctx.effect.refresh_view(
-        view.view_type,
+        view,
         title="Process Sessions",
-        view_model=view,
         reuse_key=view.view_type,
     )
     return ctx.effect.finish(control="continue", state_changes=view.to_payload())

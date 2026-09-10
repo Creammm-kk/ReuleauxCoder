@@ -60,11 +60,14 @@ class RuntimeEventPayload:
 @dataclass(frozen=True, slots=True)
 class ViewEventPayload:
     action: str
-    view_type: str
     title: str
     view_model: ViewModelPort
     focus: bool = True
     reuse_key: str | None = None
+
+    @property
+    def view_type(self) -> str:
+        return self.view_model.view_type
 
 
 @dataclass(frozen=True, slots=True)
@@ -705,23 +708,19 @@ class UIEventBus:
 
     def open_view(
         self,
-        view_type: str,
+        view_model: ViewModelPort,
         *,
         title: str,
         focus: bool = True,
         reuse_key: str | None = None,
-        view_model: ViewModelPort,
     ) -> None:
         """Broadcast a structured request for the UI to open a view/panel/tab."""
-        if view_model.view_type != view_type:
-            raise ValueError("view_type must match view_model.view_type")
         self.emit(
             UIEvent.info(
                 f"Open view: {title}",
                 kind=UIEventKind.VIEW,
                 payload=ViewEventPayload(
                     action="open",
-                    view_type=view_type,
                     title=title,
                     focus=focus,
                     reuse_key=reuse_key,
@@ -732,23 +731,19 @@ class UIEventBus:
 
     def refresh_view(
         self,
-        view_type: str,
+        view_model: ViewModelPort,
         *,
         title: str | None = None,
         reuse_key: str | None = None,
-        view_model: ViewModelPort,
     ) -> None:
         """Broadcast a structured request for the UI to refresh a view."""
-        if view_model.view_type != view_type:
-            raise ValueError("view_type must match view_model.view_type")
         self.emit(
             UIEvent.info(
-                f"Refresh view: {title or view_type}",
+                f"Refresh view: {title or view_model.view_type}",
                 kind=UIEventKind.VIEW,
                 payload=ViewEventPayload(
                     action="refresh",
-                    view_type=view_type,
-                    title=title or view_type,
+                    title=title or view_model.view_type,
                     focus=False,
                     reuse_key=reuse_key,
                     view_model=view_model,

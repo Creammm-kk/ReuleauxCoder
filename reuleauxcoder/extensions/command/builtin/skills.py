@@ -94,9 +94,8 @@ def _build_skills_view(ctx) -> SkillsViewModel:
 def _handle_show_skills(command, ctx) -> CommandEffect:
     view = _build_skills_view(ctx)
     ctx.effect.open_view(
-        view.view_type,
+        view,
         title="Skills",
-        view_model=view,
         reuse_key="skills",
     )
     return ctx.effect.finish(control="continue", state_changes=view.to_payload())
@@ -130,9 +129,8 @@ def _handle_reload_skills(command, ctx) -> CommandEffect:
 
     view = _build_skills_view(ctx)
     ctx.effect.refresh_view(
-        view.view_type,
+        view,
         title="Skills",
-        view_model=view,
         reuse_key="skills",
     )
     return ctx.effect.finish(control="continue", state_changes=view.to_payload())
@@ -170,9 +168,8 @@ def _handle_toggle_skill(command: object, ctx) -> CommandEffect:
 
     view = _build_skills_view(ctx)
     ctx.effect.refresh_view(
-        view.view_type,
+        view,
         title="Skills",
-        view_model=view,
         reuse_key="skills",
     )
     return ctx.effect.finish(control="continue", state_changes=view.to_payload())

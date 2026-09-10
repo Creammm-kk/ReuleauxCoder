@@ -422,9 +422,8 @@ def test_ui_event_bus_open_view_emits_structured_view_event() -> None:
     bus.subscribe(lambda event: seen.append(event), replay_history=False)
 
     bus.open_view(
-        "help",
+        HelpViewModel(sections=()),
         title="Help",
-        view_model=HelpViewModel(sections=()),
         focus=False,
         reuse_key="help",
     )

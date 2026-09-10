@@ -23,12 +23,15 @@ if TYPE_CHECKING:
 class OpenViewRequest:
     """Structured request for UI layers to open or focus a view."""
 
-    view_type: str
     title: str
     view_model: ViewModel
     focus: bool = True
     reuse_key: str | None = None
     action: Literal["open", "refresh"] = "open"
+
+    @property
+    def view_type(self) -> str:
+        return self.view_model.view_type
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,7 +62,6 @@ class CommandEffect:
     session_exit_time: str | None = None
     notifications: list[NotificationEffect] = field(default_factory=list)
     views: list[OpenViewRequest] = field(default_factory=list)
-    interactions: list[object] = field(default_factory=list)
     state_changes: list[StateChangeEffect] = field(default_factory=list)
 
     @property
@@ -115,18 +117,14 @@ class CommandEffect:
 
     def open_view(
         self,
-        view_type: str,
+        view_model: ViewModel,
         *,
         title: str,
-        view_model: ViewModel,
         focus: bool = True,
         reuse_key: str | None = None,
     ) -> None:
-        if view_model.view_type != view_type:
-            raise ValueError("view_type must match view_model.view_type")
         self.views.append(
             OpenViewRequest(
-                view_type=view_type,
                 title=title,
                 view_model=view_model,
                 focus=focus,
@@ -137,18 +135,14 @@ class CommandEffect:
 
     def refresh_view(
         self,
-        view_type: str,
+        view_model: ViewModel,
         *,
         title: str | None = None,
-        view_model: ViewModel,
         reuse_key: str | None = None,
     ) -> None:
-        if view_model.view_type != view_type:
-            raise ValueError("view_type must match view_model.view_type")
         self.views.append(
             OpenViewRequest(
-                view_type=view_type,
-                title=title or view_type,
+                title=title or view_model.view_type,
                 view_model=view_model,
                 focus=False,
                 reuse_key=reuse_key,

@@ -154,9 +154,8 @@ def _handle_list_jobs(command, ctx) -> CommandEffect:
     jobs = manager.list_jobs()
     view = _build_jobs_view(manager, jobs)
     ctx.effect.open_view(
-        view.view_type,
+        view,
         title="Sub-agent Jobs",
-        view_model=view,
         reuse_key=view.view_type,
     )
     return ctx.effect.finish(control="continue", state_changes=view.to_payload())
@@ -173,9 +172,8 @@ def _handle_get_job(command, ctx) -> CommandEffect:
 
     view = _build_jobs_view(manager, [job])
     ctx.effect.open_view(
-        view.view_type,
+        view,
         title=f"Sub-agent Job {job.id}",
-        view_model=view,
         reuse_key=view.view_type,
     )
     return ctx.effect.finish(control="continue", state_changes=view.to_payload())
@@ -211,9 +209,8 @@ def _handle_wait_job(command, ctx) -> CommandEffect:
 
     view = _build_jobs_view(manager, manager.list_jobs())
     ctx.effect.refresh_view(
-        view.view_type,
+        view,
         title="Sub-agent Jobs",
-        view_model=view,
         reuse_key=view.view_type,
     )
     return ctx.effect.finish(control="continue", state_changes=view.to_payload())

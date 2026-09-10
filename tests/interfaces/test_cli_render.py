@@ -4,11 +4,12 @@ import pytest
 
 from rich.markdown import Markdown
 
+from reuleauxcoder.app.commands.view_models import HelpViewModel
 from reuleauxcoder.domain.agent.events import AgentEvent
 from reuleauxcoder.domain.runtime.events import agent_event_to_runtime_event
 from reuleauxcoder.interfaces.cli.render import CLIRenderer
-from reuleauxcoder.interfaces.cli.views.common import render_markdown_panel
-from reuleauxcoder.interfaces.events import UIEvent, UIEventKind
+from reuleauxcoder.interfaces.cli.views.registry import create_cli_view_registry
+from reuleauxcoder.interfaces.events import UIEvent, UIEventBus, UIEventKind
 from reuleauxcoder.interfaces.view_registry import ViewRendererRegistry
 from reuleauxcoder.presentation.models import AssistantCell, NoticeCell, ToolCell
 
@@ -108,15 +109,16 @@ def test_cli_renderer_tracks_notification_block_after_stream() -> None:
     assert notice.category == UIEventKind.SYSTEM.value
 
 
-def test_render_markdown_panel_closes_active_stream_block() -> None:
-    renderer = _renderer()
+def test_help_view_closes_active_stream_block() -> None:
+    renderer = CLIRenderer(view_registry=create_cli_view_registry())
     renderer.render_content_markdown = Mock()
     renderer.render_plain_text = Mock()
+    bus = UIEventBus()
+    bus.subscribe(renderer.on_ui_event)
 
     render_agent_event(renderer, AgentEvent.stream_token("hello"))
-    rendered = render_markdown_panel(renderer, markdown_text="# Help", title="Help")
+    bus.open_view(HelpViewModel(sections=()), title="Help")
 
-    assert rendered is True
     assert renderer._active_content_block is None
     assert renderer.reducer.state.transcript.cells[0].text == "hello"
     renderer.render_content_markdown.assert_called_once_with("hello")

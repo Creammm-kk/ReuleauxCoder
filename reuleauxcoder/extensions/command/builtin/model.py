@@ -143,9 +143,8 @@ def _handle_show_model(command, ctx) -> CommandEffect:
     )
 
     ctx.effect.open_view(
-        view.view_type,
+        view,
         title="Model Profiles",
-        view_model=view,
         reuse_key="model_profiles",
     )
 
@@ -170,9 +169,8 @@ def _refresh_model_view(ctx) -> ModelListViewModel:
         runtime_state=build_session_runtime_state(ctx.config, ctx.agent),
     )
     ctx.effect.refresh_view(
-        view.view_type,
+        view,
         title="Model Profiles",
-        view_model=view,
         reuse_key="model_profiles",
     )
     return view

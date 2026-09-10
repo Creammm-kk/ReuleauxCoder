@@ -276,16 +276,14 @@ def _apply_command_effect(result: CommandEffect, ui_bus: UIEventBus) -> None:
     for view in result.views:
         if view.action == "refresh":
             ui_bus.refresh_view(
-                view.view_type,
+                view.view_model,
                 title=view.title,
                 reuse_key=view.reuse_key,
-                view_model=view.view_model,
             )
         else:
             ui_bus.open_view(
-                view.view_type,
+                view.view_model,
                 title=view.title,
                 focus=view.focus,
                 reuse_key=view.reuse_key,
-                view_model=view.view_model,
             )

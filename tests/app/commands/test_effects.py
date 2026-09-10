@@ -1,5 +1,7 @@
 from types import SimpleNamespace
 
+import pytest
+
 from reuleauxcoder.app.commands.models import (
     CommandEffect,
 )
@@ -20,8 +22,7 @@ def _action(handler) -> ActionSpec:
     )
 
 
-def test_dispatch_records_notifications_without_publishing() -> None:
-    real_bus = UIEventBus()
+def test_dispatch_records_notifications_in_returned_effect() -> None:
     effect = CommandEffect()
     ctx = SimpleNamespace(effect=effect)
 
@@ -33,27 +34,37 @@ def test_dispatch_records_notifications_without_publishing() -> None:
     parsed = SimpleNamespace(action=action, command=object())
     result = ActionRegistry().dispatch(parsed, ctx)
 
-    assert real_bus._history == []
+    assert result is effect
     assert [notice.message for notice in result.notifications] == ["done"]
 
 
-def test_effect_requires_and_preserves_typed_view_model() -> None:
-    effect = CommandEffect()
-    model = HelpViewModel(sections=())
-    effect.open_view("help", title="Help", view_model=model)
-
-    (view,) = effect.views
-
-    assert view.view_model is model
-
-
-def test_cli_applies_command_effect_once() -> None:
+@pytest.mark.parametrize(
+    "action, title, expected_title, focus",
+    [
+        ("open", "Help", "Help", True),
+        ("refresh", "Updated help", "Updated help", False),
+        ("refresh", None, "help", False),
+    ],
+)
+def test_cli_applies_command_effect_once(action, title, expected_title, focus) -> None:
     result = CommandEffect()
     result.info("hello")
-    result.open_view("help", title="Help", view_model=HelpViewModel(sections=()))
+    model = HelpViewModel(sections=())
+    getattr(result, f"{action}_view")(model, title=title, reuse_key="help-panel")
     result.finish()
     bus = UIEventBus()
 
     _apply_command_effect(result, bus)
 
-    assert [event.message for event in bus._history] == ["hello", "Open view: Help"]
+    notice, view_event = bus.history_snapshot()
+    assert notice.message == "hello"
+    assert view_event.message == f"{action.capitalize()} view: {expected_title}"
+    assert result.views[0].view_model is model
+    assert result.views[0].view_type == "help"
+    payload = view_event.payload
+    assert payload.view_model is model
+    assert payload.view_type == "help"
+    assert payload.action == action
+    assert payload.title == expected_title
+    assert payload.focus is focus
+    assert payload.reuse_key == "help-panel"

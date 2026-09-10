@@ -206,9 +206,8 @@ def _handle_unset_approval_rule(command, ctx) -> CommandEffect:
         target=command.target,
     )
     ctx.effect.refresh_view(
-        view.view_type,
+        view,
         title="Approval Rules",
-        view_model=view,
         reuse_key="approval_rules",
     )
     return ctx.effect.finish(control="continue", state_changes=view.to_payload())
@@ -243,9 +242,8 @@ def _handle_unset_global_approval_rule(command, ctx) -> CommandEffect:
         saved_path=str(path),
     )
     ctx.effect.refresh_view(
-        view.view_type,
+        view,
         title="Approval Rules",
-        view_model=view,
         reuse_key="approval_rules",
     )
     return ctx.effect.finish(
@@ -256,9 +254,8 @@ def _handle_unset_global_approval_rule(command, ctx) -> CommandEffect:
 def _handle_show_approval(command, ctx) -> CommandEffect:
     view = _build_approval_view(ctx)
     ctx.effect.open_view(
-        view.view_type,
+        view,
         title="Approval Rules",
-        view_model=view,
         reuse_key="approval_rules",
     )
     return ctx.effect.finish(control="continue", state_changes=view.to_payload())
@@ -317,9 +314,8 @@ def _handle_set_approval_rule(command, ctx) -> CommandEffect:
         action_name=command.action,
     )
     ctx.effect.refresh_view(
-        view.view_type,
+        view,
         title="Approval Rules",
-        view_model=view,
         reuse_key="approval_rules",
     )
 
@@ -355,9 +351,8 @@ def _handle_set_global_approval_rule(command, ctx) -> CommandEffect:
         saved_path=str(path),
     )
     ctx.effect.refresh_view(
-        view.view_type,
+        view,
         title="Approval Rules",
-        view_model=view,
         reuse_key="approval_rules",
     )
 

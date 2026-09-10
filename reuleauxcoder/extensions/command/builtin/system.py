@@ -136,9 +136,8 @@ def _handle_show_help(command, ctx) -> CommandEffect:
     else:
         view = build_help_view(ctx.ui_profile, ctx.action_registry)
     ctx.effect.open_view(
-        view.view_type,
+        view,
         title="ReuleauxCoder Help",
-        view_model=view,
         reuse_key="help",
     )
     return ctx.effect.finish(control="continue", state_changes=view.to_payload())
@@ -278,9 +277,8 @@ def _handle_tokens(command, ctx) -> CommandEffect:
     )
 
     ctx.effect.open_view(
-        view.view_type,
+        view,
         title="Token Usage",
-        view_model=view,
         reuse_key="token_usage",
     )
 
@@ -309,9 +307,8 @@ def _handle_debug(command, ctx) -> CommandEffect:
 def _handle_config(command, ctx) -> CommandEffect:
     view = build_effective_config_view(ctx.config, ctx.agent)
     ctx.effect.open_view(
-        view.view_type,
+        view,
         title="Effective Configuration",
-        view_model=view,
         reuse_key=view.view_type,
     )
     return ctx.effect.finish(control="continue", state_changes=view.to_payload())
@@ -414,9 +411,8 @@ def _handle_status_perf(command, ctx) -> CommandEffect:
         slowest=slowest,
     )
     ctx.effect.open_view(
-        view.view_type,
+        view,
         title="Runtime Performance",
-        view_model=view,
         reuse_key=view.view_type,
     )
     return ctx.effect.finish(control="continue", state_changes=view.to_payload())

@@ -31,7 +31,3 @@ class ViewRendererRegistry:
     def get(self, view_type: str) -> ViewRendererSpec | None:
         """Return the renderer spec for a view type if registered."""
         return self._renderers.get(view_type)
-
-    def has(self, view_type: str) -> bool:
-        """Return whether a renderer exists for the given view type."""
-        return view_type in self._renderers
