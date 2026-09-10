@@ -12,7 +12,7 @@ import {TuiController} from './state/controller.js';
 import {InputHistory} from './state/history.js';
 import {App} from './ui/App.js';
 import {safe} from './ui/format.js';
-import {configureTheme} from './ui/theme.js';
+import {configureTheme, DEFAULT_THEME, presets} from './ui/theme.js';
 import {loadTheme} from './ui/theme-config.js';
 
 async function main() {
@@ -22,7 +22,7 @@ async function main() {
     python: {type: 'string'}, backend: {type: 'string'}, theme: {type: 'string'}, 'no-alt-screen': {type: 'boolean'},
   }});
   if (values.help) {
-    process.stdout.write(`ReuleauxCoder React TUI\n\nUsage: rcoder-tui [options]\n       rcoder-tui --backend EXECUTABLE -- [backend arguments…]\n\n  --cwd PATH          Local working directory (default: current directory)\n  --config PATH       Python backend configuration\n  --model NAME        Override model\n  --resume ID         Resume a saved session\n  --python PATH       Python executable (default: repository .venv/python, then python3)\n  --backend PROGRAM   Launch a custom stdio backend, e.g. ssh\n  --theme NAME|PATH   terminal / ocean / ember, or a JSON theme file\n  --no-alt-screen     Render in the main terminal buffer\n\nOpen / or Ctrl+P for command menus. F1 opens keyboard help.\n`);
+    process.stdout.write(`ReuleauxCoder React TUI\n\nUsage: rcoder-tui [options]\n       rcoder-tui --backend EXECUTABLE -- [backend arguments…]\n\n  --cwd PATH          Local working directory (default: current directory)\n  --config PATH       Python backend configuration\n  --model NAME        Override model\n  --resume ID         Resume a saved session\n  --python PATH       Python executable (default: repository .venv/python, then python3)\n  --backend PROGRAM   Launch a custom stdio backend, e.g. ssh\n  --theme NAME|PATH   ${Object.keys(presets).join(' / ')}, or a JSON theme file (default: ${DEFAULT_THEME})\n  --no-alt-screen     Render in the main terminal buffer\n\nOpen / or Ctrl+P for command menus. F1 opens keyboard help.\n`);
     return;
   }
   if (!process.stdin.isTTY || !process.stdout.isTTY) throw new Error('The TUI needs a terminal. Use rcoder --prompt for non-interactive output.');

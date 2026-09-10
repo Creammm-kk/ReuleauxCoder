@@ -24,9 +24,9 @@ export function markdown(text: string): string {
   function render(tokens: Token[]): string {
     return tokens.map((token: any) => {
       switch (token.type) {
-        case 'heading': return paint.bold(inline(token.text)) + '\n';
+        case 'heading': return paint.secondary(paint.bold(inline(token.text))) + '\n';
         case 'paragraph': return inline(token.text) + '\n';
-        case 'code': return paint.muted(token.lang || 'code') + '\n' + safe(token.text).split('\n').map((line: string) => '  ' + line).join('\n') + '\n';
+        case 'code': return paint.info(token.lang || 'code') + '\n' + safe(token.text).split('\n').map((line: string) => paint.border('  │ ') + line).join('\n') + '\n';
         case 'blockquote': return render(token.tokens).split('\n').map(line => '│ ' + line).join('\n');
         case 'list': return token.items.map((item: any, index: number) => `${token.ordered ? `${index + (token.start || 1)}.` : '•'} ${item.task ? (item.checked ? '[✓] ' : '[ ] ') : ''}${render(item.tokens).trimEnd()}`).join('\n') + '\n';
         case 'table': return [token.header.map((cell: any) => paint.bold(inline(cell.text))).join(' │ '), ...token.rows.map((row: any[]) => row.map(cell => inline(cell.text)).join(' │ '))].join('\n') + '\n';

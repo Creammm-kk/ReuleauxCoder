@@ -9,12 +9,14 @@ import {resolveTheme} from '../src/ui/theme.js';
 test('project theme defaults, CLI preset and custom file have explicit precedence', async t => {
   const cwd = await mkdtemp(join(tmpdir(), 'rcoder-theme-'));
   t.after(() => rm(cwd, {recursive: true, force: true}));
-  assert.deepEqual(await loadTheme(undefined, cwd), resolveTheme('terminal'));
+  assert.deepEqual(await loadTheme(undefined, cwd), resolveTheme('workbench'));
   await mkdir(join(cwd, '.rcoder'));
   await writeFile(join(cwd, '.rcoder/tui-theme.json'), JSON.stringify({extends: 'ember', accent: '#12ABef'}));
   const project = await loadTheme(undefined, cwd);
   assert.equal(project.accent, '#12ABef');
   assert.equal(project.warning, resolveTheme('ember').warning);
+  assert.equal(project.secondary, resolveTheme('ember').secondary);
+  assert.deepEqual(await loadTheme('terminal', cwd), resolveTheme('terminal'));
   assert.deepEqual(await loadTheme('ocean', cwd), resolveTheme('ocean'));
   await writeFile(join(cwd, 'custom.json'), JSON.stringify({extends: 'ocean', selectionText: 'white'}));
   assert.equal((await loadTheme('custom.json', cwd)).selectionText, 'white');

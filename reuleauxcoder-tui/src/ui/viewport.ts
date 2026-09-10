@@ -44,7 +44,7 @@ export class TranscriptLayout {
           const symbol = cell.streaming ? '◌' : cell.kind === 'user' ? '▸' : cell.kind === 'assistant' ? '◭' : cell.kind === 'tool' ? '↳' : '·';
           const label = cell.kind === 'user' ? cell.title === 'You' ? 'YOU' : safe(cell.title) : cell.kind === 'assistant' ? 'REULEAUX' : cell.kind === 'tool' ? `TOOL / ${safe(cell.title)}` : safe(cell.title);
           const title = `${symbol} ${label}`;
-          const color = cell.tone === 'error' ? paint.error : cell.tone === 'warning' ? paint.warning : cell.kind === 'user' ? paint.accent : cell.kind === 'assistant' ? paint.bold : cell.tone === 'success' ? paint.success : paint.muted;
+          const color = cell.tone === 'error' ? paint.error : cell.tone === 'warning' ? paint.warning : cell.kind === 'user' ? paint.accent : cell.kind === 'assistant' ? paint.secondary : cell.tone === 'success' ? paint.success : paint.muted;
           const indent = cell.kind === 'user' ? paint.accent('▏') + ' ' : cell.kind === 'tool' ? paint.muted('▏') + ' ' : '  ';
           rendered = [line(color(title), width), ...rows.map(row => indent + row), ''];
         }
@@ -74,7 +74,7 @@ export function selectionRows(items: {label: string; description?: string | null
   for (let i = start; i < Math.min(items.length, start + count); i++) {
     const item = items[i];
     const title = `${i === index ? '▸' : ' '} ${safe(item.label)}${item.current ? ' ✓' : ''}`;
-    rows.push(i === index ? paint.selected(paint.bold(fit(title, width))) : line(title, width));
+    rows.push(i === index ? paint.selected(paint.bold(fit(title, width))) : line((item.current ? paint.success : paint.secondary)(title), width));
     if (perItem === 2) {
       const description = '  ' + safe(item.description ?? '');
       rows.push(i === index ? paint.selected(fit(description, width)) : line(paint.muted(description), width));

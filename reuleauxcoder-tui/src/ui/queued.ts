@@ -19,7 +19,7 @@ export function queuedRows(state: RuntimeState, width: number, height: number): 
   const visible = Math.min(count, height - 1);
   const detail = visible < count ? `+${count - visible} more · F2 all` : 'F2 full text';
   const rows = entries.slice(0, visible).map(entry => rail(
-    paint.accent(entry.label + ' · ') + paint.muted(safe(entry.text).replace(/\s+/g, ' ').trim()), width,
+    (entry.label.startsWith('Command') ? paint.info : paint.accent)(entry.label + ' · ') + paint.muted(safe(entry.text).replace(/\s+/g, ' ').trim()), width,
   ));
   return [section(`QUEUED ${count}`, detail, width), ...rows];
 }

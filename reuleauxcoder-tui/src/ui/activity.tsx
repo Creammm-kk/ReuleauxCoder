@@ -2,7 +2,7 @@ import React, {useEffect, useState} from 'react';
 import {Box, Text} from 'ink';
 import type {TuiController} from '../state/controller.js';
 import {safe} from './format.js';
-import {between, paint, rail} from './theme.js';
+import {between, fit, paint, rail} from './theme.js';
 
 export function activityFor(c: TuiController) {
   if (c.session.fatal) return null;
@@ -30,8 +30,8 @@ export function ActivityLine({label, moving, width}: {label: string; moving: boo
     const timer = setInterval(() => setTick(tick => tick + 1), 100);
     return () => clearInterval(timer);
   }, [moving]);
-  const color = moving ? paint.accent : paint.warning;
+  const color = moving ? paint.secondary : paint.warning;
   const text = color(`${moving ? frames[tick % frames.length] : '◇'} ${label}`);
   const elapsed = moving ? paint.muted(`${Math.floor((Date.now() - started) / 1000)}s`) : '';
-  return <Box height={1} flexShrink={0}><Text wrap="truncate">{rail(between(text, elapsed, width - 2), width, color)}</Text></Box>;
+  return <Box height={1} flexShrink={0}><Text wrap="truncate">{paint.surface(fit(rail(between(text, elapsed, width - 2), width, color), width))}</Text></Box>;
 }

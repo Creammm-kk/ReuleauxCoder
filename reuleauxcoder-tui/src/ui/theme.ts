@@ -3,6 +3,11 @@ import stringWidth from 'string-width';
 
 export interface Theme {
   accent: string;
+  secondary: string;
+  info: string;
+  border: string;
+  foreground: string;
+  background: string;
   muted: string;
   success: string;
   warning: string;
@@ -11,16 +16,27 @@ export interface Theme {
   selectionText: string;
 }
 
+const terminal: Theme = {
+  accent: 'cyan', secondary: 'magenta', info: 'blue', border: 'gray', foreground: 'default', background: 'default',
+  muted: 'default', success: 'green', warning: 'yellow', error: 'red',
+  selectionBackground: 'blue', selectionText: 'white',
+};
+export const DEFAULT_THEME = 'workbench';
 export const presets: Record<string, Theme> = {
-  terminal: {
-    accent: 'cyan', muted: 'default', success: 'green', warning: 'yellow',
-    error: 'red', selectionBackground: 'blue', selectionText: 'white',
+  terminal,
+  workbench: {
+    ...terminal,
+    accent: '#dbac6a', secondary: '#93b8ac', info: '#9fbad6', border: '#46524f', foreground: '#dedcd3', background: '#191d1e',
+    muted: '#919b98', success: '#93b8ac', warning: '#e4b976', error: '#e58c7d',
+    selectionBackground: '#35423e', selectionText: '#f1e5cd',
   },
   ocean: {
+    ...terminal, secondary: '#bb9af7', info: '#7dcfff', border: '#46536c',
     accent: '#7dcfff', muted: '#8493aa', success: '#9ece6a', warning: '#e0af68',
     error: '#f7768e', selectionBackground: '#253a59', selectionText: '#c0e5ff',
   },
   ember: {
+    ...terminal, secondary: '#9bc5b5', info: '#a6bacd', border: '#65544a',
     accent: '#eab676', muted: '#a5988c', success: '#a8ba83', warning: '#e6bf72',
     error: '#ed8a80', selectionBackground: '#493329', selectionText: '#fff0da',
   },
@@ -51,7 +67,7 @@ export function resolveTheme(value: unknown): Theme {
   return theme;
 }
 
-let current = presets.terminal;
+let current = presets[DEFAULT_THEME];
 export function configureTheme(theme: Theme) {current = {...theme};}
 
 function colorCode(color: string, background = false): string {
@@ -66,10 +82,19 @@ export const paint = {
   muted: (text: string) => current.muted === 'default' ? `\x1b[2m${text}\x1b[22m` : foreground('muted', text),
   bold: (text: string) => `\x1b[1m${text}\x1b[22m`,
   accent: (text: string) => foreground('accent', text),
+  secondary: (text: string) => foreground('secondary', text),
+  info: (text: string) => foreground('info', text),
+  border: (text: string) => foreground('border', text),
   success: (text: string) => foreground('success', text),
   error: (text: string) => foreground('error', text),
   warning: (text: string) => foreground('warning', text),
   selected: (text: string) => colorCode(current.selectionBackground, true) + colorCode(current.selectionText) + text + '\x1b[39m\x1b[49m',
+  action: (text: string) => colorCode(current.success, true) + colorCode(current.background === 'default' ? 'black' : current.background) + ` ${text} ` + '\x1b[39m\x1b[49m',
+  // Restore the theme surface after nested ANSI styles (selection, Markdown, cursor).
+  surface: (text: string) => {
+    const fg = colorCode(current.foreground), bg = colorCode(current.background, true);
+    return fg + bg + text.replaceAll('\x1b[39m', fg).replaceAll('\x1b[49m', bg).replaceAll('\x1b[0m', '\x1b[0m' + fg + bg) + '\x1b[39m\x1b[49m';
+  },
 };
 
 export function fit(text: string, width: number): string {
@@ -83,15 +108,23 @@ export function between(left: string, right: string, width: number): string {
 }
 
 export function section(label: string, detail: string, width: number, color = paint.accent): string {
-  const heading = sliceAnsi(`━ ${label} `, 0, Math.max(0, width - 2));
+  const heading = sliceAnsi(`─ ${label} `, 0, Math.max(0, width - 2));
   const available = Math.max(0, width - stringWidth(heading) - 3);
   const caption = sliceAnsi(detail, 0, available);
   const rule = '─'.repeat(Math.max(0, width - stringWidth(heading) - stringWidth(caption) - (caption ? 1 : 0)));
-  return color(heading) + paint.muted(rule + (caption ? ' ' + caption : ''));
+  return color(heading) + paint.border(rule) + (caption ? paint.muted(' ' + caption) : '');
+}
+
+export function frameEdge(label: string, width: number, bottom = false, color = paint.accent): string {
+  return paint.border(bottom ? '╰' : '╭') + section(label, '', width - 2, color) + paint.border(bottom ? '╯' : '╮');
+}
+
+export function frameRow(text: string, width: number): string {
+  return paint.border('│ ') + fit(text, width - 4) + paint.border(' │');
 }
 
 export function rail(text: string, width: number, color = paint.muted): string {
   return color('▏') + ' ' + fit(text, width - 2);
 }
 
-export const keyHint = (key: string, label: string) => `${paint.accent('[')}${paint.bold(key)}${paint.accent(']')} ${paint.muted(label)}`;
+export const keyHint = (key: string, label: string, color = paint.accent) => `${color(paint.bold(key))} ${paint.muted(label)}`;
