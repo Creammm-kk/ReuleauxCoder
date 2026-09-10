@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from reuleauxcoder.app.commands.process_views import ProcessRowViewModel, ProcessSessionsViewModel
+from reuleauxcoder.app.commands.process_views import (
+    ProcessRowViewModel,
+    ProcessSessionsViewModel,
+)
 
 from dataclasses import dataclass
 
@@ -478,6 +481,7 @@ def register_actions(registry: ActionRegistry) -> None:
         [
             ActionSpec(
                 action_id="processes.list",
+                preview=True,
                 command_type=ListProcessesCommand,
                 feature_id="processes",
                 description="[session] Browse running and retained shell process sessions",

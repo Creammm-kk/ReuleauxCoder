@@ -22,7 +22,13 @@ from reuleauxcoder.app.commands.shared import (
     slash_trigger,
 )
 from reuleauxcoder.app.commands.specs import ActionSpec, DuringTurnPolicy
-from reuleauxcoder.app.runtime.approval import VALID_APPROVAL_ACTIONS, build_approval_view, parse_approval_target, refresh_approval_runtime, same_rule_policy_target
+from reuleauxcoder.app.runtime.approval import (
+    VALID_APPROVAL_ACTIONS,
+    build_approval_view,
+    parse_approval_target,
+    refresh_approval_runtime,
+    same_rule_policy_target,
+)
 from reuleauxcoder.app.commands.approval_views import ApprovalRuleView, ApprovalView
 from reuleauxcoder.app.runtime.session_state import get_runtime_approval_config
 from reuleauxcoder.infrastructure.persistence.workspace_config_store import (
@@ -696,6 +702,7 @@ def register_actions(registry: ActionRegistry) -> None:
         [
             ActionSpec(
                 action_id="approval.show",
+                preview=True,
                 command_type=EmptyCommand,
                 feature_id="approval",
                 description="Show effective approval rules for the current session",

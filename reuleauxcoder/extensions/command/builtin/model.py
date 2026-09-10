@@ -405,6 +405,7 @@ def register_actions(registry: ActionRegistry) -> None:
         [
             ActionSpec(
                 action_id="model.show",
+                preview=True,
                 command_type=EmptyCommand,
                 feature_id="model",
                 description="Show model profiles and current session/global routing",

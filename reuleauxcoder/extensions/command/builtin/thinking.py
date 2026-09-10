@@ -226,6 +226,7 @@ def register_actions(registry: ActionRegistry) -> None:
         [
             ActionSpec(
                 action_id="thinking.show",
+                preview=True,
                 command_type=EmptyCommand,
                 feature_id="thinking",
                 description="[session] Show reasoning content from the last turn",
@@ -249,6 +250,7 @@ def register_actions(registry: ActionRegistry) -> None:
             ),
             ActionSpec(
                 action_id="thinking.show_effort",
+                preview=True,
                 command_type=EmptyCommand,
                 feature_id="thinking",
                 description="Show current reasoning effort budget",

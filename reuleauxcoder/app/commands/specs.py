@@ -61,6 +61,17 @@ ActionHandler = Callable[[object, CommandContext], CommandEffect]
 
 
 @dataclass(frozen=True, slots=True)
+class ActionParameter:
+    """Form fields derived from the registered command's parameter dataclass."""
+
+    name: str
+    kind: str
+    required: bool
+    nullable: bool = False
+    default: str | int | bool | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class ActionDescription:
     """Read-only frontend description, containing no parsers or handlers."""
 
@@ -72,6 +83,8 @@ class ActionDescription:
     triggers: tuple[TriggerSpec, ...] = ()
     interactive: bool = False
     during_turn: DuringTurnPolicy = DuringTurnPolicy.DEFER_UNTIL_IDLE
+    preview: bool = False
+    parameters: tuple[ActionParameter, ...] = ()
 
     def is_available_in(self, ui_profile: UIProfile) -> bool:
         """Return whether this action is available in the given UI profile."""

@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, fields
+from dataclasses import MISSING, dataclass, fields
+from typing import get_args, get_type_hints
 
 from reuleauxcoder.app.commands.models import (
     CommandContext,
@@ -13,6 +14,7 @@ from reuleauxcoder.app.commands.specs import (
     ActionSpec,
     ActionDescription,
     ActionCatalog,
+    ActionParameter,
     CommandParseContext,
     TriggerKind,
 )
@@ -46,13 +48,43 @@ class ActionRegistry:
 
     @property
     def catalog(self) -> ActionCatalog:
-        names = tuple(field.name for field in fields(ActionDescription))
+        names = tuple(
+            field.name
+            for field in fields(ActionDescription)
+            if field.name != "parameters"
+        )
         return ActionCatalog(
             tuple(
-                ActionDescription(**{name: getattr(action, name) for name in names})
+                ActionDescription(
+                    **{name: getattr(action, name) for name in names},
+                    parameters=self._parameters(action),
+                )
                 for action in self._actions.values()
             )
         )
+
+    @staticmethod
+    def _parameters(action: ActionSpec) -> tuple[ActionParameter, ...]:
+        if action.command_type is object:
+            return ()
+        hints = get_type_hints(action.command_type)
+        result = []
+        for item in fields(action.command_type):
+            hint = hints[item.name]
+            types = get_args(hint) or (hint,)
+            nullable = type(None) in types
+            primitive = next(value for value in types if value is not type(None))
+            kind = {str: "text", int: "integer", bool: "boolean"}[primitive]
+            result.append(
+                ActionParameter(
+                    item.name,
+                    kind,
+                    item.default is MISSING and not nullable,
+                    nullable,
+                    item.default if item.default is not MISSING else None,
+                )
+            )
+        return tuple(result)
 
     def resolve(self, request: ActionRequest, ui_profile: UIProfile) -> ParsedAction:
         """Resolve a structured invocation under the same availability rules as text."""

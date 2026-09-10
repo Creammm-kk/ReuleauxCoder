@@ -189,6 +189,7 @@ def register_actions(registry: ActionRegistry) -> None:
         [
             ActionSpec(
                 action_id="mcp.show",
+                preview=True,
                 command_type=EmptyCommand,
                 feature_id="mcp",
                 description="[global][local-only] Show MCP servers and runtime connection state",

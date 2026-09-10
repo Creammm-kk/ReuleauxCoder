@@ -177,6 +177,7 @@ def register_actions(registry: ActionRegistry) -> None:
         [
             ActionSpec(
                 action_id="mode.show",
+                preview=True,
                 command_type=EmptyCommand,
                 feature_id="mode",
                 description="Show available modes and the current session mode",
@@ -188,6 +189,7 @@ def register_actions(registry: ActionRegistry) -> None:
             ),
             ActionSpec(
                 action_id="mode.current",
+                preview=True,
                 command_type=EmptyCommand,
                 feature_id="mode",
                 description="[session] Show the current session mode",

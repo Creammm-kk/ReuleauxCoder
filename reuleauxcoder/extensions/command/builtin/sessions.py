@@ -454,6 +454,7 @@ def register_actions(registry: ActionRegistry) -> None:
         [
             ActionSpec(
                 action_id="sessions.list",
+                preview=True,
                 command_type=ListSessionsCommand,
                 feature_id="sessions",
                 description="[session-index] Browse saved sessions (add `all` to include every fingerprint)",

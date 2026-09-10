@@ -217,6 +217,7 @@ def register_actions(registry: ActionRegistry) -> None:
         [
             ActionSpec(
                 action_id="skills.show",
+                preview=True,
                 command_type=EmptyCommand,
                 feature_id="skills",
                 description="Show available skills and global enable/disable state",

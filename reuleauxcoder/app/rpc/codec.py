@@ -53,6 +53,7 @@ _TYPES.update(
         cls.__name__: cls
         for cls in (
             specs.ActionCatalog,
+            specs.ActionParameter,
             specs.ActionDescription,
             specs.TriggerSpec,
             specs.TriggerKind,

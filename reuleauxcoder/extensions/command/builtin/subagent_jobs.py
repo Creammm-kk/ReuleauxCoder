@@ -334,6 +334,7 @@ def register_actions(registry: ActionRegistry) -> None:
         [
             ActionSpec(
                 action_id="subagent.jobs.list",
+                preview=True,
                 command_type=ListSubagentJobsCommand,
                 feature_id="subagent",
                 description="[session] List sub-agent background jobs spawned from this session runtime",

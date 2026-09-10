@@ -404,6 +404,7 @@ def register_actions(registry: ActionRegistry) -> None:
         [
             ActionSpec(
                 action_id="system.help",
+                preview=True,
                 command_type=EmptyCommand,
                 feature_id="system",
                 description="Show command help and scope annotations",
@@ -447,6 +448,7 @@ def register_actions(registry: ActionRegistry) -> None:
             ),
             ActionSpec(
                 action_id="system.tokens",
+                preview=True,
                 command_type=EmptyCommand,
                 feature_id="system",
                 description="[session] Show token usage for the current session",
@@ -473,6 +475,7 @@ def register_actions(registry: ActionRegistry) -> None:
             ),
             ActionSpec(
                 action_id="system.status_perf",
+                preview=True,
                 command_type=EmptyCommand,
                 feature_id="system",
                 description="[session] Show recent runtime performance timings",
@@ -487,6 +490,7 @@ def register_actions(registry: ActionRegistry) -> None:
             ),
             ActionSpec(
                 action_id="system.config",
+                preview=True,
                 command_type=EmptyCommand,
                 feature_id="system",
                 description="Show effective configuration values, sources and diagnostics",
