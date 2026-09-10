@@ -89,6 +89,7 @@ def test_backend_cancel_closes_visible_terminal_prompt(monkeypatch):
     import threading
     from concurrent.futures import ThreadPoolExecutor
     from prompt_toolkit import PromptSession
+    from prompt_toolkit.application import create_app_session
     from prompt_toolkit.input import create_pipe_input
     from prompt_toolkit.output import DummyOutput
     from reuleauxcoder.app.interaction_contracts import ConfirmRequest
@@ -101,10 +102,19 @@ def test_backend_cancel_closes_visible_terminal_prompt(monkeypatch):
         monkeypatch.setattr(module, "PromptSession", lambda **kwargs: session)
         interactor = CLIUIInteractor(UIEventBus())
         request = ConfirmRequest("Confirm", "Question")
+
+        def confirm():
+            # AppSession uses contextvars; the pool worker needs its own test I/O.
+            with create_app_session(input=pipe, output=session.output):
+                return interactor.confirm(request)
+
         with ThreadPoolExecutor(max_workers=1) as pool:
-            response = pool.submit(interactor.confirm, request)
+            response = pool.submit(confirm)
             try:
-                assert shown.wait(2)
+                rendered = shown.wait(2)
+                if response.done():
+                    response.result()  # Surface startup errors instead of hiding them behind a timeout.
+                assert rendered
                 interactor.cancel(request.request_id)
                 assert response.result(timeout=2).cancelled
             finally:
