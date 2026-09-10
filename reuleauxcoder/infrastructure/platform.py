@@ -33,23 +33,12 @@ class PlatformInfo:
 
     def __init__(self):
         self._system = platform.system().lower()
-        self._is_windows = self._system == "windows"
-        self._is_linux = self._system == "linux"
-        self._is_darwin = self._system == "darwin"
         self._shell: ShellType | None = None
         self._shell_path: str | None = None
 
     @property
     def is_windows(self) -> bool:
-        return self._is_windows
-
-    @property
-    def is_linux(self) -> bool:
-        return self._is_linux
-
-    @property
-    def is_darwin(self) -> bool:
-        return self._is_darwin
+        return self._system == "windows"
 
     @property
     def system(self) -> str:
@@ -60,37 +49,26 @@ class PlatformInfo:
         if self._shell is not None:
             return self._shell
 
-        if self._is_windows:
-            # Git Bash first — the AI generates Unix commands (grep, sed, &&,
-            # |, etc.) that PowerShell only partially supports via aliases.
-            # Most Windows developers have Git for Windows installed.
-            if shutil.which("bash"):
-                self._shell = ShellType.BASH
-                self._shell_path = shutil.which("bash")
-            elif shutil.which("pwsh"):
-                self._shell = ShellType.POWERSHELL_CORE
-                self._shell_path = shutil.which("pwsh")
-            elif shutil.which("powershell"):
-                self._shell = ShellType.POWERSHELL
-                self._shell_path = shutil.which("powershell")
-            elif shutil.which("cmd"):
-                self._shell = ShellType.CMD
-                self._shell_path = shutil.which("cmd")
-            else:
-                self._shell = ShellType.UNKNOWN
-                self._shell_path = None
+        # Prefer Git Bash on Windows; Unix can fall back to POSIX sh.
+        candidates = (
+            (
+                ("bash", ShellType.BASH),
+                ("pwsh", ShellType.POWERSHELL_CORE),
+                ("powershell", ShellType.POWERSHELL),
+                ("cmd", ShellType.CMD),
+            )
+            if self.is_windows
+            else (("bash", ShellType.BASH), ("sh", ShellType.BASH))
+        )
+        for executable, shell_type in candidates:
+            path = shutil.which(executable)
+            if path is not None:
+                self._shell = shell_type
+                self._shell_path = path
+                break
         else:
-            # Unix-like systems
-            if shutil.which("bash"):
-                self._shell = ShellType.BASH
-                self._shell_path = shutil.which("bash")
-            elif shutil.which("sh"):
-                # POSIX sh fallback (minimal containers, NixOS, etc.)
-                self._shell = ShellType.BASH
-                self._shell_path = shutil.which("sh")
-            else:
-                self._shell = ShellType.UNKNOWN
-                self._shell_path = None
+            self._shell = ShellType.UNKNOWN
+            self._shell_path = None
 
         return self._shell
 
@@ -144,7 +122,7 @@ class PlatformInfo:
         """Get common binary paths for this platform."""
         paths: list[Path] = []
 
-        if self._is_windows:
+        if self.is_windows:
             # Windows common paths
             localappdata = Path.home() / "AppData" / "Local"
             roaming = Path.home() / "AppData" / "Roaming"
@@ -175,11 +153,6 @@ class PlatformInfo:
 
         return paths
 
-    def format_path_for_display(self, path: Path | str) -> str:
-        """Format path for display (use forward slashes for consistency)."""
-        p = Path(path)
-        return str(p.as_posix())
-
 
 # Global platform info singleton
 _platform_info: PlatformInfo | None = None
@@ -196,13 +169,3 @@ def get_platform_info() -> PlatformInfo:
 def is_windows() -> bool:
     """Check if running on Windows."""
     return get_platform_info().is_windows
-
-
-def get_shell_type() -> ShellType:
-    """Get the preferred shell type."""
-    return get_platform_info().get_preferred_shell()
-
-
-def get_shell_command() -> list[str]:
-    """Get shell command prefix for subprocess."""
-    return get_platform_info().get_shell_executable()

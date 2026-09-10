@@ -28,7 +28,8 @@ from reuleauxcoder.app.commands.shared import (
 from reuleauxcoder.app.commands.specs import ActionSpec, DuringTurnPolicy
 from reuleauxcoder.app.runtime.model_profiles import apply_main_model_profile
 from reuleauxcoder.app.runtime.session_state import build_session_runtime_state
-from reuleauxcoder.domain.config.models import resolve_context_strategies
+from reuleauxcoder.domain.config.models import Config, resolve_context_strategies
+from reuleauxcoder.domain.session.models import SessionRuntimeState
 from reuleauxcoder.infrastructure.persistence.workspace_config_store import (
     WorkspaceConfigStore,
 )
@@ -152,7 +153,7 @@ def _handle_show_model(command, ctx) -> CommandEffect:
 
 
 def _resolve_profile(ctx, profile_name: str):
-    profiles = getattr(ctx.config, "model_profiles", {}) or {}
+    profiles = ctx.config.model_profiles
     profile = profiles.get(profile_name)
     if profile is None:
         ctx.effect.error(
@@ -227,10 +228,9 @@ def _handle_set_main_model(command, ctx) -> CommandEffect:
     ctx.config.active_main_model_profile = profile_name
     ctx.config.model = profile.model
     ctx.config.api_key = profile.api_key
-    ctx.config.provider = getattr(profile, "provider", "openai-compatible")
-    ctx.config.request_mode = getattr(profile, "request_mode", None)
-    if hasattr(profile, "responses"):
-        ctx.config.responses = profile.responses
+    ctx.config.provider = profile.provider
+    ctx.config.request_mode = profile.request_mode
+    ctx.config.responses = profile.responses
     ctx.config.base_url = profile.base_url
     ctx.config.temperature = profile.temperature
     ctx.config.max_tokens = profile.max_tokens
@@ -251,14 +251,8 @@ def _handle_set_main_model(command, ctx) -> CommandEffect:
 
 def _handle_set_sub_model(command, ctx) -> CommandEffect:
     profile_name = command.profile_name
-    profiles = getattr(ctx.config, "model_profiles", {}) or {}
-    profile = profiles.get(profile_name)
+    profile = _resolve_profile(ctx, profile_name)
     if profile is None:
-        ctx.effect.error(
-            f"Unknown model profile '{profile_name}'. Use /model to list available profiles.",
-            kind=UIEventKind.MODEL,
-            profile_name=profile_name,
-        )
         return ctx.effect.finish(control="continue")
 
     ctx.config.active_sub_model_profile = profile_name
@@ -277,49 +271,36 @@ def _handle_set_sub_model(command, ctx) -> CommandEffect:
     return ctx.effect.finish(control="continue", state_changes=view.to_payload())
 
 
-def _build_model_profiles_view(config, runtime_state=None) -> ModelListViewModel:
-    profiles = getattr(config, "model_profiles", {}) or {}
+def _build_model_profiles_view(
+    config: Config, runtime_state: SessionRuntimeState | None = None
+) -> ModelListViewModel:
+    profiles = config.model_profiles
     runtime_main = (
-        getattr(runtime_state, "active_main_model_profile", None)
-        if runtime_state is not None
-        else None
+        runtime_state.active_main_model_profile if runtime_state is not None else None
     )
     runtime_sub = (
-        getattr(runtime_state, "active_sub_model_profile", None)
-        if runtime_state is not None
-        else None
+        runtime_state.active_sub_model_profile if runtime_state is not None else None
     )
-    runtime_model = (
-        getattr(runtime_state, "model", None) if runtime_state is not None else None
-    )
+    runtime_model = runtime_state.model if runtime_state is not None else None
     active_main = (
-        runtime_main
-        or getattr(config, "active_main_model_profile", None)
-        or getattr(config, "active_model_profile", None)
+        runtime_main or config.active_main_model_profile or config.active_model_profile
     )
-    active_sub = (
-        runtime_sub or getattr(config, "active_sub_model_profile", None) or active_main
-    )
+    active_sub = runtime_sub or config.active_sub_model_profile or active_main
 
     profile_items = []
     for name in sorted(profiles):
         profile = profiles[name]
         strategy_settings = resolve_context_strategies(
             config.context,
-            getattr(profile, "context", None),
+            profile.context,
         )
-        api_key = getattr(profile, "api_key", "")
-        if api_key and len(api_key) >= 4:
-            api_hint = f"...{api_key[-4:]}"
-        elif api_key:
-            api_hint = f"...{api_key}"
-        else:
-            api_hint = "(empty)"
+        api_key = profile.api_key
+        api_hint = f"...{api_key[-4:]}" if api_key else "(empty)"
         profile_items.append(
             ModelProfileViewModel(
                 name=name,
                 model=profile.model,
-                provider=getattr(profile, "provider", "openai-compatible"),
+                provider=profile.provider,
                 active_main=active_main == name,
                 active_sub=active_sub == name,
                 base_url=profile.base_url,

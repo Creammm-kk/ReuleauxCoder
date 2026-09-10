@@ -22,6 +22,7 @@ from reuleauxcoder.app.commands.shared import (
     slash_trigger,
 )
 from reuleauxcoder.app.commands.specs import ActionSpec, DuringTurnPolicy
+from reuleauxcoder.domain.config.models import Config
 from reuleauxcoder.interfaces.events import UIEventKind
 
 
@@ -60,9 +61,7 @@ def _parse_switch_mode(user_input: str, parse_ctx):
 
 
 def _handle_show_mode(command, ctx) -> CommandEffect:
-    view = _build_mode_profiles_view(
-        ctx.config, getattr(ctx.agent, "active_mode", None)
-    )
+    view = _build_mode_profiles_view(ctx.config, ctx.agent.active_mode)
 
     ctx.effect.open_view(
         view.view_type,
@@ -75,12 +74,10 @@ def _handle_show_mode(command, ctx) -> CommandEffect:
 
 
 def _handle_current_mode(command, ctx) -> CommandEffect:
-    mode_name = getattr(ctx.agent, "active_mode", None) or getattr(
-        ctx.config, "active_mode", None
-    )
+    mode_name = ctx.agent.active_mode or ctx.config.active_mode
     if mode_name:
-        mode = (getattr(ctx.config, "modes", {}) or {}).get(mode_name)
-        description = getattr(mode, "description", "") if mode is not None else ""
+        mode = ctx.config.modes.get(mode_name)
+        description = mode.description if mode is not None else ""
         suffix = f" - {description}" if description else ""
         ctx.effect.info(
             f"Current mode: {mode_name}{suffix}",
@@ -97,7 +94,7 @@ def _handle_current_mode(command, ctx) -> CommandEffect:
 
 def _handle_switch_mode(command, ctx) -> CommandEffect:
     mode_name = command.mode_name
-    modes = getattr(ctx.config, "modes", {}) or {}
+    modes = ctx.config.modes
 
     if mode_name not in modes:
         ctx.effect.error(
@@ -115,9 +112,7 @@ def _handle_switch_mode(command, ctx) -> CommandEffect:
         mode_name=mode_name,
     )
 
-    view = _build_mode_profiles_view(
-        ctx.config, getattr(ctx.agent, "active_mode", None)
-    )
+    view = _build_mode_profiles_view(ctx.config, ctx.agent.active_mode)
     ctx.effect.refresh_view(
         view.view_type,
         title="Modes",
@@ -128,20 +123,20 @@ def _handle_switch_mode(command, ctx) -> CommandEffect:
     return ctx.effect.finish(control="continue", state_changes=view.to_payload())
 
 
-def _build_mode_profiles_view(config, active_mode: str | None) -> ModesViewModel:
-    modes = getattr(config, "modes", {}) or {}
-    current = active_mode or getattr(config, "active_mode", None)
+def _build_mode_profiles_view(
+    config: Config, active_mode: str | None
+) -> ModesViewModel:
+    modes = config.modes
+    current = active_mode or config.active_mode
 
     mode_items = tuple(
         ModeProfileViewModel(
             name=name,
             active=current == name,
-            description=getattr(mode, "description", "") or "",
-            tools=tuple(getattr(mode, "tools", []) or []),
-            prompt_append=getattr(mode, "prompt_append", "") or "",
-            allowed_subagent_modes=tuple(
-                getattr(mode, "allowed_subagent_modes", []) or []
-            ),
+            description=mode.description,
+            tools=tuple(mode.tools),
+            prompt_append=mode.prompt_append,
+            allowed_subagent_modes=tuple(mode.allowed_subagent_modes),
         )
         for name, mode in sorted(modes.items())
     )
