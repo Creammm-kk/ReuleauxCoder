@@ -1,0 +1,151 @@
+import {EventEmitter} from 'node:events';
+import {emptyState, typeOf, type Json, type RecordData, type RuntimeState, type UIEvent, type View} from '../protocol/wire.js';
+import {diff, fields} from '../ui/format.js';
+
+export interface Cell {id: string; kind: 'user' | 'assistant' | 'reasoning' | 'tool' | 'notice'; title: string; body: string; details: string; revision: number; streaming: boolean; tone?: string; tool?: {name: string; arguments: RecordData; outcome?: RecordData}}
+export class SessionStore extends EventEmitter {
+  state: RuntimeState = emptyState;
+  cells: Cell[] = [];
+  plan: RecordData = {items: []};
+  progress: RecordData = {};
+  jobs = new Map<string, RecordData>();
+  processes = new Map<string, RecordData>();
+  diagnostics = new Map<string, RecordData>();
+  operations = new Map<string, RecordData>();
+  startup: UIEvent[] = [];
+  fatal: string | null = null;
+  connected = false;
+  private next = 0;
+  private generation = 0;
+  private assistant: Cell | undefined;
+  private reasoning: Cell | undefined;
+  private tools = new Map<string, Cell>();
+  private reviewedDiffs = new Set<string>();
+
+  add(kind: Cell['kind'], title: string, body: string, details = '', streaming = false): Cell {
+    const cell: Cell = {id: String(++this.next), kind, title, body, details, revision: 0, streaming};
+    this.cells.push(cell);
+    return cell;
+  }
+  notice(message: string, tone = 'info') {const cell = this.add('notice', tone === 'error' ? 'Error' : 'Notice', message); cell.tone = tone; this.emit('change');}
+  clear() {this.cells = []; this.tools.clear(); this.jobs.clear(); this.processes.clear(); this.diagnostics.clear(); this.operations.clear(); this.reviewedDiffs.clear(); this.assistant = this.reasoning = undefined; this.plan = {items: []}; this.progress = {};}
+  update(state: RuntimeState) {
+    if (state.session_generation > this.generation) {this.clear(); this.generation = state.session_generation;}
+    if (!state.running) for (const cell of this.cells) this.finishCell(cell);
+    this.state = state; this.emit('change');
+  }
+  initialize(info: any) {
+    this.update(info.state);
+    this.startup = info.startup_events;
+    for (const message of info.recent_conversation) this.add(message.role === 'user' ? 'user' : 'assistant', message.role === 'user' ? 'You' : 'Reuleaux', message.content);
+    this.plan = info.plan ?? {items: []}; this.progress = info.progress ?? {};
+    for (const event of info.runtime_events) this.runtime(event);
+    for (const event of this.startup) if (event.level === 'error' || event.level === 'warning') this.notice(event.message, event.level);
+    this.connected = true; this.emit('change');
+  }
+  completed(result: any) {
+    if (result.clear_transcript) this.clear();
+    if (result.session_changed && result.plan) {this.plan = result.plan; this.progress = result.progress;}
+    this.emit('change');
+  }
+  reviewed(request: RecordData, response: RecordData) {
+    if (response.approved) for (const section of request.sections ?? []) if (section.kind === 'diff' && typeof section.content === 'string') this.reviewedDiffs.add(section.content);
+  }
+  event(event: UIEvent, wire?: Json, generation?: number) {
+    if (generation !== undefined) {
+      if (generation < this.generation) return;
+      if (generation > this.generation) {this.clear(); this.generation = generation;}
+    }
+    const payload = event.payload;
+    switch (typeOf(payload)) {
+      case 'RuntimeEventPayload': this.runtime(payload!.event, payload!.generation_owner_agent_id); break;
+      case 'ViewEventPayload': {
+        const view = payload as unknown as View;
+        if (typeOf(view.view_model) === 'SessionResumeViewModel') {
+          this.clear();
+          for (const entry of view.view_model.entries) this.add(entry.role === 'user' ? 'user' : 'assistant', entry.role === 'user' ? 'You' : 'Reuleaux', entry.content);
+        } else this.emit('view', view, (wire as any)?.fields.payload);
+        break;
+      }
+      case 'ReasoningNoticePayload': this.add('reasoning', payload!.title, event.message).tone = 'inline'; break;
+      case 'RemoteStreamPayload': this.add('tool', payload!.tool_name, payload!.chunk); break;
+      case 'InteractionPromptPayload': break; // The correlated reverse request owns this UI.
+      default: if (event.message) {const cell = this.add('notice', event.kind, event.message, Object.keys(event.data ?? {}).length ? fields(event.data) : ''); cell.tone = event.level;}
+    }
+    this.emit('change');
+  }
+  runtime(event: RecordData, owner?: string) {
+    const root = !event.agent_id || event.agent_id === this.state.agent_id;
+    const generation = event.session_generation;
+    if (root && (!owner || owner === this.state.agent_id) && generation != null) {
+      if (generation < this.generation) return;
+      if (generation > this.generation) {this.clear(); this.generation = generation;}
+    }
+    const p = event.payload;
+    const type = typeOf(p);
+    if (!root && !['SubagentJobChanged', 'OperationPhaseChanged', 'DiagnosticsPublished', 'DiagnosticsCleared'].includes(type ?? '')) return;
+    switch (type) {
+      case 'TurnStarted': case 'ChatStarted':
+        this.assistant = this.reasoning = undefined;
+        this.add('user', 'You', p.user_input.replace(/^\[SESSION_RESUME\][^\n]*\n\n/, '')); break;
+      case 'AssistantContentDelta': case 'StreamChunk':
+        if (p.reasoning) {this.appendReasoning(p); break;}
+        this.finishCell(this.reasoning); this.reasoning = undefined;
+        this.assistant ??= this.add('assistant', 'Reuleaux', '', '', true);
+        this.assistant.body += p.text; this.assistant.revision++; break;
+      case 'ReasoningDelta': this.appendReasoning(p); break;
+      case 'TurnFinished': case 'ChatCompleted':
+        if (!this.assistant && p.render_response && p.response) this.assistant = this.add('assistant', 'Reuleaux', p.response);
+        for (const cell of this.cells) this.finishCell(cell);
+        this.assistant = this.reasoning = undefined; break;
+      case 'AssistantStreamInterrupted':
+        this.finishCell(this.assistant); this.finishCell(this.reasoning); this.reasoning = undefined;
+        this.assistant = undefined; this.add('notice', 'Steering', 'Current response interrupted to apply your next instruction.'); break;
+      case 'ToolCallStarted': {
+        this.finishCell(this.assistant); this.finishCell(this.reasoning);
+        this.assistant = this.reasoning = undefined;
+        const cell = this.add('tool', p.tool_name, 'Running…', fields(p.arguments), true);
+        cell.tool = {name: p.tool_name, arguments: p.arguments};
+        this.tools.set(p.tool_call_id, cell); break;
+      }
+      case 'ToolOutputDelta': {
+        const cell = this.tools.get(p.tool_call_id);
+        if (cell) {cell.body = (cell.body === 'Running…' ? '' : cell.body) + p.text; cell.revision++;}
+        else this.add('tool', p.tool_call_id, p.text);
+        break;
+      }
+      case 'ToolCallFinished': {
+        const cell = this.tools.get(p.tool_call_id) ?? this.add('tool', p.tool_name, '');
+        const out = p.outcome;
+        cell.tool = {name: p.tool_name, arguments: cell.tool?.arguments ?? {}, outcome: out};
+        const body = [out.summary, out.content, out.stdout, out.stderr ? '[stderr]\n' + out.stderr : ''].filter(Boolean).join('\n');
+        const detail = [cell.details, fields(out)].filter(Boolean).join('\n\n');
+        cell.title = `${p.tool_name} · ${out.status}`;
+        cell.body = body + (out.diff ? this.reviewedDiffs.has(out.diff.unified) ? '\nReviewed diff applied.' : '\n' + diff(out.diff.unified) : '');
+        cell.details = detail; cell.streaming = false; cell.revision++;
+        cell.tone = out.status === 'succeeded' ? 'success' : 'warning'; break;
+      }
+      case 'SubagentJobChanged': this.jobs.set(p.job_id, p); break;
+      case 'ProcessSessionChanged': this.processes.set(p.process_session_id, p); break;
+      case 'DiagnosticsPublished': this.diagnostics.set(p.file_path, p); this.add('notice', 'Diagnostics · ' + p.file_path, fields(p.diagnostics)); break;
+      case 'DiagnosticsCleared': this.diagnostics.delete(p.file_path); break;
+      case 'PlanUpdated': this.plan = p; break;
+      case 'ProgressReported': this.progress = p; break;
+      case 'OperationPhaseChanged': this.operations.set(p.operation_id, p); break;
+      case 'UserSteeringApplied': this.add('user', 'You · steering applied', p.user_input); break;
+      case 'ApprovalRequested': break;
+      case 'ApprovalResolved': this.add('notice', p.approved ? 'Approved' : 'Denied', [p.reason, p.grant_label, p.mode, p.released_count ? `${p.released_count} queued requests released` : null, p.resolution_source].filter(Boolean).join(' · ')); break;
+      default: this.add('notice', type ?? 'Runtime event', fields(p));
+    }
+    this.emit('change');
+  }
+  private appendReasoning(p: RecordData) {
+    this.finishCell(this.assistant); this.assistant = undefined;
+    this.reasoning ??= this.add('reasoning', 'Thinking', '', '', true);
+    this.reasoning.body += p.text; this.reasoning.revision++;
+    this.reasoning.tone = p.display_mode === 'inline' ? 'inline' : 'collapsed';
+  }
+  private finishCell(cell: Cell | undefined) {
+    if (cell?.streaming) {cell.streaming = false; cell.revision++;}
+  }
+}
