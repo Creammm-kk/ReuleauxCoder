@@ -388,7 +388,3 @@ class CLIRenderer:
     def render_plain_text(self, text: str) -> None:
         """Render raw text without markdown parsing."""
         self.console.print(text, end="")
-
-    def render_markdown(self, text: str) -> None:
-        """Backward-compatible plain text output hook used by tests."""
-        self.render_plain_text(text)

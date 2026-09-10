@@ -473,10 +473,6 @@ class SubagentManager:
             job.status not in _TERMINAL_JOB_STATUSES for job in self._jobs.values()
         )
 
-    @staticmethod
-    def is_valid_mode(mode: str) -> bool:
-        return mode in _VALID_SUBAGENT_MODES
-
     def submit_background(
         self,
         *,

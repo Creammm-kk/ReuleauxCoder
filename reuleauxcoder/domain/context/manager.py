@@ -573,10 +573,6 @@ class ContextManager:
         self._emergency_at = max(1, int(limit * 0.90))
 
     @property
-    def effective_input_tokens(self) -> int:
-        return self._budget.available_input
-
-    @property
     def request_input_limit(self) -> int:
         return self._budget.request_input_limit
 

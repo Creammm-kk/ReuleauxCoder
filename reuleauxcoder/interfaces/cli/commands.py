@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from reuleauxcoder.app.commands import CommandContext, dispatch_command, parse_command
 from reuleauxcoder.app.commands.models import CommandEffect
 from reuleauxcoder.app.commands.registry import ActionRegistry
-from reuleauxcoder.infrastructure.persistence.session_store import SessionRestoreError
 from reuleauxcoder.interfaces.events import UIEventBus, UIEventKind
 from reuleauxcoder.interfaces.ui_registry import UIProfile
 
@@ -16,6 +16,9 @@ if TYPE_CHECKING:
     from reuleauxcoder.domain.agent.agent import Agent
     from reuleauxcoder.domain.config.models import Config
     from reuleauxcoder.extensions.skills.service import SkillsService
+
+
+_logger = logging.getLogger(__name__)
 
 
 _RUNTIME_CONFIG_ACTIONS = frozenset(
@@ -182,42 +185,12 @@ def handle_command(
                 ),
             )
             _record_command_control_event(agent, parsed_action.action.action_id, result)
-        except SessionRestoreError as error:
-            # The active session remains usable. This is a failed command, not
-            # degraded state restored from disk, so publish it through the
-            # generic runtime-incident channel.
-            recorder_error_type = None
-            record_runtime_issue = getattr(agent, "record_runtime_issue", None)
-            if callable(record_runtime_issue):
-                try:
-                    record_runtime_issue(error.phase, error.error_type, error.ref)
-                except KeyboardInterrupt:
-                    raise
-                except BaseException as recorder_error:
-                    name = type(recorder_error).__name__
-                    recorder_error_type = (
-                        name
-                        if name
-                        and len(name) <= 64
-                        and name.isascii()
-                        and name.replace("_", "").isalnum()
-                        else "Exception"
-                    )
-            result = CommandEffect()
-            result.error(
-                str(error),
-                kind=UIEventKind.SESSION,
-                phase=error.phase,
-                error_type=error.error_type,
-                ref=error.ref,
-                runtime_issue_recorder_error_type=recorder_error_type,
-            )
-            result.finish(control="continue")
-        except Exception as exc:
-            result = CommandEffect()
-            result.error(f"Command failed: {exc}", kind=UIEventKind.COMMAND)
-            result.finish(control="continue")
-        _apply_command_effect(result, ui_bus)
+            _apply_command_effect(result, ui_bus)
+        except KeyboardInterrupt:
+            raise
+        except BaseException:
+            _logger.exception("Command failed: %s", parsed_action.action.action_id)
+            raise
         return {
             "action": result.control,
             "action_id": parsed_action.action.action_id,

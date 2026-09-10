@@ -1,5 +1,8 @@
 from pathlib import Path
 from types import SimpleNamespace
+
+import pytest
+
 from reuleauxcoder.app.commands.models import CommandEffect
 from reuleauxcoder.app.commands.help import build_help_view
 from reuleauxcoder.app.commands.loader import create_builtin_action_registry
@@ -7,7 +10,7 @@ from reuleauxcoder.app.commands.loader import create_builtin_action_registry
 from reuleauxcoder.domain.config.models import ApprovalConfig, Config
 from reuleauxcoder.domain.hooks.registry import HookRegistry
 from reuleauxcoder.domain.extensions import LifecycleCoordinator
-from reuleauxcoder.domain.session.models import SessionRuntimeState
+from reuleauxcoder.domain.session.models import Session, SessionRuntimeState
 from reuleauxcoder.extensions.command.builtin.sessions import (
     ListSessionsCommand,
     NewSessionCommand,
@@ -79,6 +82,23 @@ def _build_ctx(tmp_path: Path, *, fingerprint: str = "local") -> SimpleNamespace
     effect = CommandEffect()
     return SimpleNamespace(
         config=config, agent=agent, effect=effect, sessions_dir=tmp_path
+    )
+
+
+def _run_command(ctx, user_input: str, ui_bus: UIEventBus):
+    return handle_command(
+        user_input,
+        ctx.agent,
+        ctx.config,
+        ctx.agent.current_session_id,
+        ui_bus,
+        UIProfile(
+            ui_id="cli",
+            display_name="CLI",
+            capabilities=frozenset({UICapability.TEXT_INPUT}),
+        ),
+        create_builtin_action_registry(),
+        sessions_dir=ctx.sessions_dir,
     )
 
 
@@ -199,22 +219,8 @@ def test_corrupt_resume_keeps_current_session_and_exposes_safe_failure_fact(
     ctx.agent.current_session_id = "current-session"
     ctx.agent.messages.append({"role": "user", "content": "current work"})
     ui_bus = UIEventBus()
-    profile = UIProfile(
-        ui_id="cli",
-        display_name="CLI",
-        capabilities=frozenset({UICapability.TEXT_INPUT}),
-    )
 
-    result = handle_command(
-        f"/session {target_id}",
-        ctx.agent,
-        ctx.config,
-        "current-session",
-        ui_bus,
-        profile,
-        create_builtin_action_registry(),
-        sessions_dir=tmp_path,
-    )
+    result = _run_command(ctx, f"/session {target_id}", ui_bus)
 
     assert result["action"] == "continue"
     assert result["session_id"] == "current-session"
@@ -231,22 +237,8 @@ def test_missing_resume_is_a_model_visible_failed_command(tmp_path: Path) -> Non
     ctx.agent.current_session_id = "current-session"
     ctx.agent.messages.append({"role": "user", "content": "current work"})
     ui_bus = UIEventBus()
-    profile = UIProfile(
-        ui_id="cli",
-        display_name="CLI",
-        capabilities=frozenset({UICapability.TEXT_INPUT}),
-    )
 
-    result = handle_command(
-        "/session session_missing",
-        ctx.agent,
-        ctx.config,
-        "current-session",
-        ui_bus,
-        profile,
-        create_builtin_action_registry(),
-        sessions_dir=tmp_path,
-    )
+    result = _run_command(ctx, "/session session_missing", ui_bus)
 
     assert result["action"] == "continue"
     assert result["session_id"] == "current-session"
@@ -352,3 +344,93 @@ def test_new_session_respects_disabled_auto_save(tmp_path: Path) -> None:
     assert result.session_id is not None
     assert SessionStore(tmp_path).list() == []
     assert ctx.agent.messages == []
+
+
+@pytest.mark.parametrize("error_type", [RuntimeError, KeyboardInterrupt, SystemExit])
+def test_save_callback_failure_propagates_after_preserving_content(
+    tmp_path: Path,
+    caplog,
+    error_type,
+) -> None:
+    ctx = _build_ctx(tmp_path)
+    ctx.agent.current_session_id = "current-session"
+    ctx.agent.messages.append({"role": "user", "content": "work to preserve"})
+    error = error_type("save observer failed")
+
+    def fail_callback(*args, **kwargs):
+        raise error
+
+    ctx.agent.lifecycle = SimpleNamespace(session_saved=fail_callback)
+    ui_bus = UIEventBus()
+
+    with pytest.raises(error_type) as raised:
+        _run_command(ctx, "/save", ui_bus)
+
+    assert raised.value is error
+    saved = SessionStore(tmp_path).load("current-session")
+    assert saved.get_preview() == "work to preserve"
+    assert not ui_bus.history_snapshot()
+    if error_type is KeyboardInterrupt:
+        assert not caplog.records
+    else:
+        record = caplog.records[-1]
+        assert record.getMessage() == "Command failed: sessions.save"
+        assert record.exc_info[1] is error
+        assert "fail_callback" in caplog.text
+
+
+@pytest.mark.parametrize(
+    "owner, method",
+    [(SessionStore, "get_exit_time"), (Session, "get_recent_conversation")],
+)
+def test_resume_projection_failure_is_logged_and_propagates(
+    tmp_path: Path,
+    monkeypatch,
+    caplog,
+    owner,
+    method,
+) -> None:
+    store = SessionStore(tmp_path)
+    target_id = store.save(
+        messages=[{"role": "user", "content": "saved work"}],
+        model="m1",
+        fingerprint="local",
+    )
+    ctx = _build_ctx(tmp_path)
+    ctx.agent.current_session_id = "current-session"
+    error = RuntimeError("projection failed")
+
+    def fail_projection(*args, **kwargs):
+        raise error
+
+    monkeypatch.setattr(owner, method, fail_projection)
+    ui_bus = UIEventBus()
+
+    with pytest.raises(RuntimeError) as raised:
+        _run_command(ctx, f"/session {target_id}", ui_bus)
+
+    assert raised.value is error
+    assert caplog.records[-1].exc_info[1] is error
+    assert not ui_bus.history_snapshot()
+    assert store.load(target_id).get_preview() == "saved work"
+
+
+def test_restore_issue_recorder_failure_is_logged_and_propagates(
+    tmp_path: Path,
+    caplog,
+) -> None:
+    ctx = _build_ctx(tmp_path)
+    ctx.agent.current_session_id = "current-session"
+    error = RuntimeError("recorder failed")
+
+    def fail_recording(*args):
+        raise error
+
+    ctx.agent.record_runtime_issue = fail_recording
+
+    with pytest.raises(RuntimeError) as raised:
+        _run_command(ctx, "/session missing", UIEventBus())
+
+    assert raised.value is error
+    assert caplog.records[-1].exc_info[1] is error
+    assert "fail_recording" in caplog.text
