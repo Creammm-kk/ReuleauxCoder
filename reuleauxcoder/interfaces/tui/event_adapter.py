@@ -246,10 +246,6 @@ class MiniTUIEventAdapter:
     def bind_invalidator(self, callback) -> None:
         self._invalidate = callback
 
-    def bind_incident_sink(self, sink: RuntimeIssueSink | None) -> None:
-        """Route content-free projection and delivery failures to the agent."""
-        self._incident_sink = sink
-
     def report_projection_failure(
         self,
         subsystem: str,

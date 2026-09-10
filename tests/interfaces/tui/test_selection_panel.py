@@ -11,25 +11,21 @@ def _items() -> tuple[PanelItem, ...]:
 
 
 def test_open_starts_on_current_item() -> None:
-    panel = SelectionPanel.open(title="Modes", items=_items())
+    items = _items()
+    panel = SelectionPanel.from_definition(
+        PanelDefinition("mode_profiles", "Modes", (items[1], items[0], items[2]))
+    )
 
-    assert panel.index == 0
+    assert panel.index == 1
     assert panel.selected.label == "coder"
     assert panel.selected.command == "/mode switch coder"
 
 
-def test_move_wraps_around() -> None:
-    panel = SelectionPanel.open(title="Modes", items=_items())
-
-    panel.move(-1)
-    assert panel.selected.label == "debug"
-    panel.move(1)
-    assert panel.selected.label == "coder"
-
-
 def test_refresh_keeps_highlight_on_same_label() -> None:
-    panel = SelectionPanel.open(title="Modes", items=_items())
-    panel.move(1)
+    panel = SelectionPanel.from_definition(
+        PanelDefinition("mode_profiles", "Modes", _items())
+    )
+    panel.index = 1
     assert panel.selected.label == "plan"
 
     refreshed = (
@@ -43,8 +39,10 @@ def test_refresh_keeps_highlight_on_same_label() -> None:
 
 
 def test_refresh_falls_back_when_label_disappears() -> None:
-    panel = SelectionPanel.open(title="Modes", items=_items())
-    panel.move(2)
+    panel = SelectionPanel.from_definition(
+        PanelDefinition("mode_profiles", "Modes", _items())
+    )
+    panel.index = 2
     assert panel.selected.label == "debug"
 
     panel.refresh(

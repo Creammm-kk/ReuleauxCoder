@@ -392,15 +392,3 @@ class CLIRenderer:
     def render_markdown(self, text: str) -> None:
         """Backward-compatible plain text output hook used by tests."""
         self.render_plain_text(text)
-
-
-def show_error(text: str) -> None:
-    CLIHistoryPresenter(console, PresentationPolicy()).notice(text, level="error")
-
-
-def show_warning(text: str) -> None:
-    CLIHistoryPresenter(console, PresentationPolicy()).notice(text, level="warning")
-
-
-def show_info(text: str) -> None:
-    CLIHistoryPresenter(console, PresentationPolicy()).notice(text, level="info")

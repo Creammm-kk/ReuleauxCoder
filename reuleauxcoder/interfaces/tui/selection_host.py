@@ -39,11 +39,7 @@ class SelectionHost:
     @property
     def filterable(self) -> bool:
         panel = self.selection
-        return bool(
-            panel is not None
-            and panel.definition is not None
-            and panel.definition.filterable
-        )
+        return panel is not None and panel.definition.filterable
 
     def open_view(self, payload) -> bool:
         """Claim a command-owned view as a modal panel or absorb its refresh."""
@@ -59,7 +55,7 @@ class SelectionHost:
             if (
                 spec.refresh is PanelRefreshPolicy.UPDATE
                 and self.selection is not None
-                and self.selection.view_type == definition.view_type
+                and self.selection.definition.view_type == definition.view_type
             ):
                 self.selection.refresh(definition)
                 self._invalidate()
@@ -76,14 +72,14 @@ class SelectionHost:
         if panel is None:
             return ()
         definition = panel.definition
-        if definition is None or not definition.filterable:
-            return panel.items
+        if not definition.filterable:
+            return definition.items
         needle = self._input_text().strip().lower()
         if not needle:
-            return panel.items
+            return definition.items
         return tuple(
             item
-            for item in panel.items
+            for item in definition.items
             if needle in f"{item.label} {item.description}".lower()
         )
 
@@ -110,7 +106,7 @@ class SelectionHost:
 
     def confirm(self) -> None:
         panel = self.selection
-        if panel is None or panel.definition is None:
+        if panel is None:
             return
         items = self.visible_items()
         if not items:
@@ -139,7 +135,7 @@ class SelectionHost:
         items = self.visible_items()
         hint = " · type to filter" if self.filterable else ""
         fragments: list[tuple[str, str]] = [
-            ("class:popup.cmd", f" {panel.title} "),
+            ("class:popup.cmd", f" {panel.definition.title} "),
             ("class:popup", f"· Enter select{hint} · Esc close\n"),
         ]
         if not items:

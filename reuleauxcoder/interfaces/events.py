@@ -315,11 +315,6 @@ class UIEventBus:
         self._pending_subscriber_failure_overflow = 0
         self._subscriber_failure_stale_dropped = 0
 
-    @property
-    def is_queued(self) -> bool:
-        """True when this bus uses cross-thread queued delivery."""
-        return self._queue is not None
-
     def history_snapshot(self) -> tuple[UIEvent, ...]:
         """Return initialization events without exposing mutable bus history."""
         return tuple(self._history)

@@ -68,15 +68,6 @@ def _validate_scope(scope: str) -> str:
     return normalized
 
 
-def _notes_path(scope: str, workspace_dir: Path | None = None) -> Path:
-    """Compatibility path helper for callers that use the module functions."""
-    normalized = _validate_scope(scope)
-    if normalized == "global":
-        return Path.home() / ".rcoder" / "notes.json"
-    root = Path(workspace_dir) if workspace_dir is not None else Path.cwd()
-    return root / ".rcoder" / "notes.json"
-
-
 def _process_lock(path: Path) -> threading.RLock:
     key = path.resolve(strict=False)
     with _PROCESS_LOCKS_GUARD:
@@ -413,74 +404,3 @@ class NoteStore:
         scope = "workspace" if workspace else "global"
         entries = workspace if workspace else global_entries
         return self._render_scope(scope, entries, max_chars=budget)[:budget]
-
-
-def _compat_store(
-    workspace_dir: Path | None = None,
-    *,
-    workspace_max: int = 30,
-    global_max: int = 20,
-) -> NoteStore:
-    return NoteStore(
-        workspace_dir or Path.cwd(),
-        workspace_max=workspace_max,
-        global_max=global_max,
-    )
-
-
-def write_note(
-    content: str,
-    *,
-    scope: str = "workspace",
-    max_entries: int = 30,
-    workspace_dir: Path | None = None,
-) -> NoteEntry:
-    """Compatibility wrapper that writes one note to the requested scope."""
-    kwargs = (
-        {"global_max": max_entries}
-        if _validate_scope(scope) == "global"
-        else {"workspace_max": max_entries}
-    )
-    return _compat_store(workspace_dir, **kwargs).write(content, scope=scope)
-
-
-def read_notes(
-    scope: str = "workspace",
-    workspace_dir: Path | None = None,
-) -> list[dict[str, str]]:
-    """Compatibility wrapper returning JSON-ready note dictionaries."""
-    return [entry.to_dict() for entry in _compat_store(workspace_dir).read(scope)]
-
-
-def render_notes(
-    workspace_dir: Path | None = None,
-    *,
-    max_chars: int = 1_200,
-) -> str | None:
-    """Compatibility wrapper rendering workspace and global notes."""
-    return _compat_store(workspace_dir).render(max_chars=max_chars)
-
-
-def edit_note(
-    note_id: str,
-    content: str,
-    *,
-    scope: str = "workspace",
-    workspace_dir: Path | None = None,
-) -> bool:
-    """Compatibility wrapper editing a note by stable identifier."""
-    return _compat_store(workspace_dir).edit(note_id, content, scope=scope) is not None
-
-
-def delete_note(
-    index: int | None = None,
-    *,
-    note_id: str | None = None,
-    scope: str = "workspace",
-    workspace_dir: Path | None = None,
-) -> bool:
-    """Compatibility wrapper deleting by stable ID or legacy 1-based index."""
-    return (
-        _compat_store(workspace_dir).delete(scope=scope, note_id=note_id, index=index)
-        is not None
-    )

@@ -20,14 +20,6 @@ class TranscriptPlacement:
     show_assistant_label: bool = False
     blank_lines_after: int = 1
 
-    @property
-    def decoration_key(self) -> str:
-        return (
-            f"turn={int(self.begins_turn)};"
-            f"assistant={int(self.show_assistant_label)};"
-            f"gap={self.blank_lines_after}"
-        )
-
 
 def compose_transcript(
     cells: tuple[TranscriptCell, ...],

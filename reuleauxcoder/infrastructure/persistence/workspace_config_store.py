@@ -4,11 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from reuleauxcoder.domain.config.models import (
-    ApprovalConfig,
-    ApprovalRuleConfig,
-    MCPServerConfig,
-)
+from reuleauxcoder.domain.config.models import ApprovalConfig
 from reuleauxcoder.infrastructure.yaml.loader import load_yaml_config, save_yaml_config
 from reuleauxcoder.services.config.loader import ConfigLoader
 
@@ -26,10 +22,7 @@ class WorkspaceConfigStore:
 
     def save_approval_config(self, approval: ApprovalConfig) -> Path:
         """Persist approval config into workspace ``config.yaml``."""
-        try:
-            data = load_yaml_config(self._path)
-        except FileNotFoundError:
-            data = {}
+        data = self._load()
 
         data["approval"] = {
             "default_mode": approval.default_mode,
@@ -37,17 +30,14 @@ class WorkspaceConfigStore:
             "auto_review_model_profile": approval.auto_review_model_profile,
             "auto_review_policy": approval.auto_review_policy,
             "auto_review_timeout_seconds": approval.auto_review_timeout_seconds,
-            "rules": [self.approval_rule_to_dict(rule) for rule in approval.rules],
+            "rules": [rule.to_dict(omit_none=True) for rule in approval.rules],
         }
         save_yaml_config(self._path, data)
         return self._path
 
     def save_active_model_profile(self, profile_name: str) -> Path:
         """Persist active main model profile into workspace ``config.yaml``."""
-        try:
-            data = load_yaml_config(self._path)
-        except FileNotFoundError:
-            data = {}
+        data = self._load()
 
         models_data = data.setdefault("models", {})
         models_data["active"] = profile_name
@@ -57,47 +47,16 @@ class WorkspaceConfigStore:
 
     def save_active_sub_model_profile(self, profile_name: str) -> Path:
         """Persist active sub-agent model profile into workspace ``config.yaml``."""
-        try:
-            data = load_yaml_config(self._path)
-        except FileNotFoundError:
-            data = {}
+        data = self._load()
 
         models_data = data.setdefault("models", {})
         models_data["active_sub"] = profile_name
         save_yaml_config(self._path, data)
         return self._path
 
-    def save_active_mode(self, mode_name: str) -> Path:
-        """Persist active mode into workspace ``config.yaml``."""
-        try:
-            data = load_yaml_config(self._path)
-        except FileNotFoundError:
-            data = {}
-
-        modes_data = data.setdefault("modes", {})
-        modes_data["active"] = mode_name
-        save_yaml_config(self._path, data)
-        return self._path
-
-    def save_mcp_server_config(self, server: MCPServerConfig) -> Path:
-        """Persist a single MCP server config into workspace ``config.yaml``."""
-        try:
-            data = load_yaml_config(self._path)
-        except FileNotFoundError:
-            data = {}
-
-        mcp_data = data.setdefault("mcp", {})
-        servers = mcp_data.setdefault("servers", {})
-        servers[server.name] = server.to_dict()
-        save_yaml_config(self._path, data)
-        return self._path
-
     def save_mcp_server_enabled(self, server_name: str, enabled: bool) -> Path:
         """Persist only the workspace-local enabled override for an MCP server."""
-        try:
-            data = load_yaml_config(self._path)
-        except FileNotFoundError:
-            data = {}
+        data = self._load()
 
         mcp_data = data.setdefault("mcp", {})
         servers = mcp_data.setdefault("servers", {})
@@ -109,7 +68,8 @@ class WorkspaceConfigStore:
         save_yaml_config(self._path, data)
         return self._path
 
-    @staticmethod
-    def approval_rule_to_dict(rule: ApprovalRuleConfig) -> dict:
-        """Serialize an approval rule, dropping empty fields."""
-        return rule.to_dict(omit_none=True)
+    def _load(self) -> dict:
+        try:
+            return load_yaml_config(self._path)
+        except FileNotFoundError:
+            return {}

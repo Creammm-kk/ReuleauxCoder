@@ -768,7 +768,11 @@ def test_mode_view_opens_selection_panel_and_confirm_resubmits() -> None:
     assert app.selection_host.selection is not None
     assert app.selection_host.selection.selected.label == "coder"
 
-    app.selection_host.selection.move(1)
+    app.selection_host.move(-1)
+    assert app.selection_host.selection.selected.label == "plan"
+    app.selection_host.move(1)
+    assert app.selection_host.selection.selected.label == "coder"
+    app.selection_host.move(1)
     app.selection_host.confirm()
     assert accepted == ["/mode switch plan"]
     assert app.selection_host.selection is None
@@ -849,12 +853,12 @@ def test_model_view_opens_slot_panel_then_profile_panel() -> None:
     app._accept_buffer = lambda buffer: accepted.append(buffer.text)
 
     assert app.selection_host.open_view(_model_view_payload()) is True
-    assert app.selection_host.selection.view_type == "model_slots"
-    assert len(app.selection_host.selection.items) == 4
+    assert app.selection_host.selection.definition.view_type == "model_slots"
+    assert len(app.selection_host.selection.definition.items) == 4
 
     # Confirm "Session · Main model" opens the profile panel.
     app.selection_host.confirm()
-    assert app.selection_host.selection.view_type == "model_profiles"
+    assert app.selection_host.selection.definition.view_type == "model_profiles"
     assert len(app.selection_host.stack) == 1
     assert app.selection_host.selection.selected.label == "sonnet"  # current main preselected
 
@@ -873,13 +877,13 @@ def test_model_panel_escape_returns_to_slot_panel() -> None:
     app.invalidate = lambda: None
 
     app.selection_host.open_view(_model_view_payload())
-    app.selection_host.selection.move(1)  # Session · Sub-agent model
+    app.selection_host.move(1)  # Session · Sub-agent model
     app.selection_host.confirm()
-    assert app.selection_host.selection.view_type == "model_profiles"
+    assert app.selection_host.selection.definition.view_type == "model_profiles"
     assert app.selection_host.selection.selected.label == "haiku"  # current sub preselected
 
     app.selection_host.close()  # back to slots
-    assert app.selection_host.selection.view_type == "model_slots"
+    assert app.selection_host.selection.definition.view_type == "model_slots"
     app.selection_host.close()  # close entirely
     assert app.selection_host.selection is None
 
@@ -926,19 +930,19 @@ def test_approval_view_opens_targets_then_actions() -> None:
     app._accept_buffer = lambda buffer: accepted.append(buffer.text)
 
     assert app.selection_host.open_view(_approval_view_payload()) is True
-    assert app.selection_host.selection.view_type == "approval_rules"
-    labels = [item.label for item in app.selection_host.selection.items]
+    assert app.selection_host.selection.definition.view_type == "approval_rules"
+    labels = [item.label for item in app.selection_host.selection.definition.items]
     assert labels == ["write_file", "MCP · github"]
 
     # Confirm session-scoped target -> lifetime -> action.
     app.selection_host.confirm()
-    assert app.selection_host.selection.view_type == "approval_lifetime"
+    assert app.selection_host.selection.definition.view_type == "approval_lifetime"
     assert app.selection_host.selection.selected.label == "This session"
     app.selection_host.confirm()
-    assert app.selection_host.selection.view_type == "approval_actions"
+    assert app.selection_host.selection.definition.view_type == "approval_actions"
     assert app.selection_host.selection.selected.label == "Ask every time"
 
-    app.selection_host.selection.move(1)  # deny
+    app.selection_host.move(1)  # deny
     app.selection_host.confirm()
     assert accepted == ["/approval set tool=write_file deny"]
     assert app.selection_host.selection is None
@@ -955,9 +959,9 @@ def test_approval_global_target_uses_set_global() -> None:
     app._accept_buffer = lambda buffer: accepted.append(buffer.text)
 
     app.selection_host.open_view(_approval_view_payload())
-    app.selection_host.selection.move(1)  # mcp:github (global source)
+    app.selection_host.move(1)  # mcp:github (global source)
     app.selection_host.confirm()
-    assert app.selection_host.selection.view_type == "approval_lifetime"
+    assert app.selection_host.selection.definition.view_type == "approval_lifetime"
     assert app.selection_host.selection.selected.label == "This workspace"
     app.selection_host.confirm()
     assert app.selection_host.selection.selected.label == "Allow automatically"
@@ -1006,7 +1010,7 @@ def test_approval_panel_can_remove_exact_scoped_shell_grant() -> None:
     assert signature in app.selection_host.selection.selected.label
     app.selection_host.confirm()  # lifetime
     app.selection_host.confirm()  # session actions
-    app.selection_host.selection.move(-1)
+    app.selection_host.move(-1)
     assert app.selection_host.selection.selected.label == "Remove this override"
     app.selection_host.confirm()
 
@@ -1084,7 +1088,7 @@ def test_mcp_view_opens_toggle_panel_and_confirm_keeps_it_open() -> None:
     app._accept_buffer = lambda buffer: accepted.append(buffer.text)
 
     assert app.selection_host.open_view(_mcp_view_payload()) is True
-    assert app.selection_host.selection.view_type == "mcp_servers"
+    assert app.selection_host.selection.definition.view_type == "mcp_servers"
     assert app.selection_host.selection.selected.label == "github"
     assert app.selection_host.selection.selected.command == "/mcp disable github"
 
@@ -1101,7 +1105,7 @@ def test_mcp_view_opens_toggle_panel_and_confirm_keeps_it_open() -> None:
 
     selection: SelectionPanel | None = app.selection_host.selection
     assert selection is not None
-    refreshed = {item.label: item for item in selection.items}
+    refreshed = {item.label: item for item in selection.definition.items}
     assert refreshed["github"].current is True  # still enabled in this fake view
 
 
@@ -1171,7 +1175,7 @@ def test_skills_view_opens_toggle_panel_and_confirm_keeps_it_open() -> None:
     app._accept_buffer = lambda buffer: accepted.append(buffer.text)
 
     assert app.selection_host.open_view(_skills_view_payload()) is True
-    assert app.selection_host.selection.view_type == "skills"
+    assert app.selection_host.selection.definition.view_type == "skills"
     assert app.selection_host.selection.selected.label == "commit-helper"
     assert app.selection_host.selection.selected.command == "/skills disable commit-helper"
 
@@ -1180,7 +1184,7 @@ def test_skills_view_opens_toggle_panel_and_confirm_keeps_it_open() -> None:
     assert app.selection_host.selection is not None  # toggle panels stay open
 
     # Disabled skill toggles back with the enable command.
-    app.selection_host.selection.move(1)
+    app.selection_host.move(1)
     assert app.selection_host.selection.selected.command == "/skills enable deep-review"
 
 
@@ -1196,7 +1200,7 @@ def test_skills_refresh_updates_items_in_place() -> None:
         is True
     )
     assert app.selection_host.selection is not None
-    assert len(app.selection_host.selection.items) == 2
+    assert len(app.selection_host.selection.definition.items) == 2
 
 
 def test_mcp_panel_shows_hint_row_when_no_servers() -> None:
@@ -1259,10 +1263,10 @@ def test_thinking_effort_view_opens_selection_panel() -> None:
     app._accept_buffer = lambda buffer: accepted.append(buffer.text)
 
     assert app.selection_host.open_view(payload) is True
-    assert app.selection_host.selection.view_type == "thinking_effort"
+    assert app.selection_host.selection.definition.view_type == "thinking_effort"
     assert app.selection_host.selection.selected.label == "low"  # current preselected
 
-    app.selection_host.selection.move(1)
+    app.selection_host.move(1)
     app.selection_host.confirm()
     assert accepted == ["/thinking effort medium"]
     assert app.selection_host.selection is None
@@ -1316,10 +1320,10 @@ def test_sessions_view_opens_picker_and_confirm_resubmits_restore() -> None:
     app._accept_buffer = lambda buffer: accepted.append(buffer.text)
 
     assert app.selection_host.open_view(_sessions_view_payload()) is True
-    assert app.selection_host.selection.view_type == "sessions"
+    assert app.selection_host.selection.definition.view_type == "sessions"
     assert app.selection_host.selection.selected.label.startswith("#1")  # active preselected
 
-    app.selection_host.selection.move(1)
+    app.selection_host.move(1)
     app.selection_host.confirm()
     assert accepted == ["/session sess-bbb"]
     assert app.selection_host.selection is None
@@ -1416,27 +1420,27 @@ def test_agents_view_opens_browser_and_job_actions_sub_panel() -> None:
     app._accept_buffer = lambda buffer: accepted.append(buffer.text)
 
     assert app.selection_host.open_view(_jobs_view_payload()) is True
-    assert app.selection_host.selection.view_type == "subagent_jobs"
-    assert len(app.selection_host.selection.items) == 2
+    assert app.selection_host.selection.definition.view_type == "subagent_jobs"
+    assert len(app.selection_host.selection.definition.items) == 2
 
     # Enter on a running job → actions sub panel with cancel.
     app.selection_host.confirm()
-    assert app.selection_host.selection.view_type == "agent_job_actions"
-    assert [item.label for item in app.selection_host.selection.items] == ["get details", "cancel"]
+    assert app.selection_host.selection.definition.view_type == "agent_job_actions"
+    assert [item.label for item in app.selection_host.selection.definition.items] == ["get details", "cancel"]
 
     # Cancel resubmits the canonical command and pops back to the browser.
-    app.selection_host.selection.move(1)
+    app.selection_host.move(1)
     app.selection_host.confirm()
     assert accepted == ["/agents cancel job-01"]
-    assert app.selection_host.selection.view_type == "subagent_jobs"
+    assert app.selection_host.selection.definition.view_type == "subagent_jobs"
 
 
 def test_agents_browser_terminal_job_offers_cleanup() -> None:
     app = _jobs_browser_app()
     app.selection_host.open_view(_jobs_view_payload())
-    app.selection_host.selection.move(1)  # job-02 (completed)
+    app.selection_host.move(1)  # job-02 (completed)
     app.selection_host.confirm()
-    assert [item.label for item in app.selection_host.selection.items] == ["get details", "cleanup"]
+    assert [item.label for item in app.selection_host.selection.definition.items] == ["get details", "cleanup"]
 
 
 def test_agents_browser_filters_by_task() -> None:
@@ -1530,7 +1534,7 @@ def test_approval_panel_includes_dynamic_targets_without_rules() -> None:
     app._accept_buffer = lambda buffer: accepted.append(buffer.text)
 
     assert app.selection_host.open_view(payload) is True
-    labels = [item.label for item in app.selection_host.selection.items]
+    labels = [item.label for item in app.selection_host.selection.definition.items]
     # Dynamic targets only: mcp server + builtin tool (mcp tool skipped).
     assert labels == ["MCP · time", "shell"]
 
@@ -1539,7 +1543,7 @@ def test_approval_panel_includes_dynamic_targets_without_rules() -> None:
     assert app.selection_host.selection.selected.label == "This session"
     app.selection_host.confirm()
     assert app.selection_host.selection.selected.label == "Allow automatically"
-    app.selection_host.selection.move(2)
+    app.selection_host.move(2)
     assert app.selection_host.selection.selected.label == "Ask every time"
     app.selection_host.confirm()
     assert accepted == [
