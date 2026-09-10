@@ -50,9 +50,11 @@ class _LiveSessionPersistence:
         self._timer: threading.Timer | None = None
         self._closed = False
         self._generation = 0
+        self._has_snapshot = False
 
     def __call__(self, *, deferred: bool = False) -> None:
-        if not deferred:
+        # A new session needs a discoverable manifest before its first reply.
+        if not deferred or not self._has_snapshot:
             self.flush()
             return
         scheduling_error: BaseException | None = None
@@ -93,6 +95,7 @@ class _LiveSessionPersistence:
                     return
             try:
                 self._persist()
+                self._has_snapshot = True
             except BaseException as error:
                 # The event itself was fsync'd before this best-effort snapshot.
                 # A later forced flush or restore-tail reconstruction recovers.
@@ -130,6 +133,7 @@ class _LiveSessionPersistence:
         with self._write_lock:
             try:
                 self._persist()
+                self._has_snapshot = True
             except BaseException as error:
                 self._record_failure(error)
                 raise

@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import os
 import re
 import stat
 import threading
@@ -2247,14 +2248,27 @@ class SessionStore:
         temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
         self._safe_path_status(temporary, phase=phase, ref=ref)
         try:
-            temporary.write_bytes(payload)
+            with temporary.open("xb") as stream:
+                stream.write(payload)
+                stream.flush()
+                os.fsync(stream.fileno())
             temporary.replace(path)
+            self._sync_directory(path.parent)
         except OSError as error:
             raise SessionRestoreError(
                 phase=phase,
                 error_type=_safe_error_type(error),
                 ref=ref,
             ) from None
+
+    @staticmethod
+    def _sync_directory(path: Path) -> None:
+        if os.name == "posix":
+            descriptor = os.open(path, os.O_RDONLY | os.O_DIRECTORY)
+            try:
+                os.fsync(descriptor)
+            finally:
+                os.close(descriptor)
 
     @classmethod
     def _encode_history_event(cls, event: HistoryEvent) -> bytes:
@@ -2293,7 +2307,10 @@ class SessionStore:
             with temporary.open("xb") as stream:
                 for event in events:
                     stream.write(self._encode_history_event(event))
+                stream.flush()
+                os.fsync(stream.fileno())
             temporary.replace(path)
+            self._sync_directory(path.parent)
         except (TypeError, UnicodeError, ValueError) as error:
             # A failed temp file is not referenced by the manifest and is inert.
             raise SessionRestoreError(
@@ -2466,6 +2483,8 @@ class SessionStore:
                     with events_path.open("ab") as stream:
                         for encoded_event in encoded_events:
                             stream.write(encoded_event)
+                        stream.flush()
+                        os.fsync(stream.fileno())
                 except (TypeError, UnicodeError, ValueError) as error:
                     raise SessionRestoreError(
                         phase="history_write_validate",
@@ -2542,6 +2561,7 @@ class SessionStore:
         )
         self._report_progress("Committing session manifest...")
         self._atomic_write_json(directory / "manifest.json", manifest, ref="manifest")
+        self._sync_directory(self.sessions_dir)
         cursor.initialized = True
         cursor.request_ids.intersection_update(manifest["request_ids"])
         cursor.checkpoint_ids.intersection_update(manifest["checkpoint_ids"])

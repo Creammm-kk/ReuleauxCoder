@@ -245,8 +245,23 @@ class HistoryLedger:
 
     def bind_jsonl(self, path: str | Path) -> None:
         with self._lock:
+            path = Path(path)
+            # A killed writer can leave a partial final record. Keep that fact,
+            # but separate it from the first event appended after recovery.
+            try:
+                stream = path.open("r+b")
+            except FileNotFoundError:
+                pass
+            else:
+                with stream:
+                    if stream.seek(0, os.SEEK_END):
+                        stream.seek(-1, os.SEEK_END)
+                        if stream.read(1) != b"\n":
+                            stream.write(b"\n")
+                            stream.flush()
+                            os.fsync(stream.fileno())
             previous_path = self._sink_path
-            self._sink_path = Path(path)
+            self._sink_path = path
             if self._unbound_events:
                 pending = tuple(self._unbound_events)
                 try:

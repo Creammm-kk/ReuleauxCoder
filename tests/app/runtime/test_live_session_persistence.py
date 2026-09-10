@@ -49,7 +49,7 @@ def test_unbound_reset_does_not_replace_saved_session_view(tmp_path) -> None:
     assert loaded.messages[0]["content"] == "keep me"
 
 
-def test_burst_messages_coalesce_into_one_full_snapshot(tmp_path) -> None:
+def test_first_message_is_discoverable_and_later_bursts_coalesce(tmp_path) -> None:
     config = Config(api_key="key", session_dir=str(tmp_path))
     agent = Agent(llm=_LLM(), tools=[], config=config)
     store = SessionStore(tmp_path)
@@ -69,9 +69,11 @@ def test_burst_messages_coalesce_into_one_full_snapshot(tmp_path) -> None:
             {"role": "user", "content": f"message-{index}"},
             source="user",
         )
+        if index == 0:
+            assert store.load(session_id).messages[0]["content"] == "message-0"
     agent.unbind_session_persistence()
 
-    assert len(save_calls) == 1
+    assert len(save_calls) == 2
     loaded = store.load(session_id)
     assert loaded is not None
     assert [message["content"] for message in loaded.messages] == [
