@@ -218,78 +218,44 @@ def test_auto_resume_uses_latest_and_issues_from_the_same_inventory_scan(
     assert agent.session_inventory_issues == (issue,)
 
 
-def test_restore_observer_failures_do_not_replace_success_and_are_model_visible(
-    tmp_path: Path,
+@pytest.mark.parametrize("source", ["progress", "load_progress", "ui_bus"])
+@pytest.mark.parametrize("error_type", [ValueError, OSError, SystemExit])
+def test_restore_callback_failure_is_logged_and_propagated(
+    tmp_path: Path, caplog, source, error_type
 ) -> None:
-    store = SessionStore(tmp_path)
-    session_id = store.save(
-        messages=[{"role": "user", "content": "authoritative"}],
-        model="model",
-    )
+    messages = [{"role": "user", "content": "authoritative"}]
+    SessionStore(tmp_path).save(messages=messages, model="model")
+    failure = error_type("restore callback failed")
 
-    class FatalUIBus(UIEventBus):
+    class FailingUIBus(UIEventBus):
         def emit(self, _event) -> None:
-            raise SystemExit("presentation failed with private content")
+            raise failure
 
-    def fatal_progress(_message: str) -> None:
-        raise SystemExit("progress failed with private content")
+    def fail_progress(message: str) -> None:
+        if source == "progress" or message.startswith("Loading session files"):
+            raise failure
 
     runner = _build_runner(
-        startup_progress=fatal_progress,
+        startup_progress=fail_progress if source != "ui_bus" else None,
         auto_resume_latest=True,
     )
     agent = FakeAgent()
+    bus = FailingUIBus() if source == "ui_bus" else UIEventBus()
 
-    restored_id, _, _ = runner._restore_session(
-        _build_config(tmp_path), agent, FatalUIBus()
+    with pytest.raises(error_type) as raised:
+        runner._restore_session(_build_config(tmp_path), agent, bus)
+
+    assert raised.value is failure
+    record = caplog.records[-1]
+    ref = "ui_bus" if source == "ui_bus" else "progress_callback"
+    assert f"restore_observer/{ref}" in record.message
+    assert record.exc_info[1] is failure
+    assert record.exc_info[2] is not None
+    assert "restore callback failed" in caplog.text
+    # A notification failure must not roll back an already restored transcript.
+    assert [message["content"] for message in agent.state.messages] == (
+        ["authoritative"] if source == "ui_bus" else []
     )
-
-    assert restored_id == session_id
-    facts = {
-        (issue.phase, issue.error_type, issue.ref) for issue in agent.runtime_issues
-    }
-    assert ("restore_observer", "SystemExit", "progress_callback") in facts
-    assert ("restore_observer", "SystemExit", "ui_bus") in facts
-    assert agent.session_restore_issues == ()
-    rendered = " ".join(
-        f"{issue.phase}:{issue.error_type}:{issue.ref}"
-        for issue in agent.runtime_issues
-    )
-    assert "private content" not in rendered
-
-
-def test_runtime_issue_recorder_failure_does_not_replace_restore_success(
-    tmp_path: Path,
-) -> None:
-    store = SessionStore(tmp_path)
-    session_id = store.save(
-        messages=[{"role": "user", "content": "authoritative"}],
-        model="model",
-    )
-
-    def fatal_progress(_message: str) -> None:
-        raise SystemExit("progress observer failed")
-
-    class BrokenRecorderAgent(FakeAgent):
-        def record_runtime_issue(
-            self,
-            phase: str,
-            error_type: str,
-            ref: str,
-            count: int = 1,
-        ) -> None:
-            raise SystemExit("diagnostic recorder failed")
-
-    runner = _build_runner(
-        startup_progress=fatal_progress,
-        auto_resume_latest=True,
-    )
-
-    restored_id, _, _ = runner._restore_session(
-        _build_config(tmp_path), BrokenRecorderAgent(), UIEventBus()
-    )
-
-    assert restored_id == session_id
 
 
 def test_restore_progress_keyboard_interrupt_remains_user_control(

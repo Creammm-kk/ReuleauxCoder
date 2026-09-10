@@ -132,6 +132,10 @@ def main():
                 pass
         print("Interrupted.", file=sys.stderr)
         return 130
+    except BaseException:
+        if runner is not None:
+            runner.cleanup()
+        raise
 
     ui_registry = UIRegistry([create_cli_registration(ctx.ui_bus)])
     cli_ui = ui_registry.require("cli")

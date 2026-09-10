@@ -2,6 +2,7 @@ import json
 import threading
 from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -294,6 +295,61 @@ def test_corrupt_session_projection_rebuilds_without_touching_authority(
     assert manifest_path.read_bytes() == manifest_before
     assert replay_path.read_bytes() == replay_before
     assert repaired.session_projection_path.read_bytes().startswith(b"SQLite format 3")
+
+
+def test_projection_progress_failure_is_not_treated_as_index_corruption(
+    tmp_path: Path, monkeypatch
+) -> None:
+    store = SessionStore(tmp_path)
+    store.save(messages=[{"role": "user", "content": "seed"}], model="model")
+    monkeypatch.setattr(store._projection, "query", lambda **_kwargs: None)
+
+    def fail_progress(message: str) -> None:
+        if message == "Rebuilding session query projection...":
+            raise OSError("progress output unavailable")
+
+    store.set_progress_callback(fail_progress)
+
+    with pytest.raises(OSError, match="progress output unavailable"):
+        store.list_result(fingerprint="local")
+
+
+def test_history_progress_failure_propagates_and_closes_the_file(
+    tmp_path: Path, monkeypatch
+) -> None:
+    store = SessionStore(tmp_path)
+    session_id = store.save(
+        messages=[{"role": "user", "content": str(index)} for index in range(3)],
+        model="model",
+    )
+    ticks = iter(range(100))
+    monkeypatch.setattr(
+        "reuleauxcoder.infrastructure.persistence.session_store.time",
+        SimpleNamespace(monotonic=lambda: next(ticks)),
+    )
+    opened = []
+    original_open = Path.open
+
+    def track_open(path, *args, **kwargs):
+        stream = original_open(path, *args, **kwargs)
+        opened.append(stream)
+        return stream
+
+    monkeypatch.setattr(Path, "open", track_open)
+
+    def fail_progress(message: str) -> None:
+        if message.startswith("Reading history ledger..."):
+            raise OSError("progress output unavailable")
+
+    store.set_progress_callback(fail_progress)
+
+    with pytest.raises(OSError, match="progress output unavailable"):
+        store._load_history_events(
+            tmp_path / session_id / "events.jsonl", expected_session_id=session_id
+        )
+
+    assert len(opened) == 1
+    assert opened[0].closed
 
 
 def test_projection_update_failure_does_not_fail_save_and_is_reported_later(

@@ -341,7 +341,6 @@ def bind_remote_chat_handler(
                     phase=bind_issue.phase,
                     error_type=bind_issue.error_type,
                     ref=bind_issue.ref,
-                    agent=peer_agent,
                     diagnostic_phase="persistence_observer",
                     diagnostic_ref="ui_bus",
                 )
@@ -374,7 +373,6 @@ def bind_remote_chat_handler(
                         error_type=issue.error_type,
                         ref=issue.ref,
                         count=issue.count,
-                        agent=peer_agent,
                         diagnostic_phase=diagnostic_phase,
                         diagnostic_ref="ui_bus",
                     )
@@ -397,7 +395,6 @@ def bind_remote_chat_handler(
                 error_type=issue.error_type,
                 ref=issue.ref,
                 count=issue.count,
-                agent=peer_agent,
                 diagnostic_phase="inventory_observer",
                 diagnostic_ref="ui_bus",
             )

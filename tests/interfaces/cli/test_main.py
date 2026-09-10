@@ -1,46 +1,31 @@
 from io import StringIO
 from types import SimpleNamespace
 
+import pytest
 from rich.console import Console
 
 import reuleauxcoder.interfaces.cli.main as main_module
 from reuleauxcoder.presentation.semantics import DisplayTone
 
 
-def test_keyboard_interrupt_during_initialize_exits_without_traceback(
-    monkeypatch, capsys
-) -> None:
-    cleaned_up = []
-
-    class InterruptingRunner:
-        def __init__(self, _options, *, startup_progress=None) -> None:
-            pass
-
-        def initialize(self):
-            raise KeyboardInterrupt
-
-        def cleanup(self) -> None:
-            cleaned_up.append(True)
-
-    monkeypatch.setattr(
-        main_module,
-        "parse_args",
-        lambda: SimpleNamespace(
-            config=None,
-            model=None,
-            resume=None,
-            server=False,
+@pytest.mark.parametrize(
+    ("failure", "exit_code", "stderr_text"),
+    [
+        (KeyboardInterrupt(), 130, "Interrupted.\n"),
+        (
+            main_module.SessionRestoreError(
+                phase="manifest_decode", error_type="JSONDecodeError", ref="manifest"
+            ),
+            1,
+            "phase=manifest_decode, error_type=JSONDecodeError",
         ),
-    )
-    monkeypatch.setattr(main_module, "AppRunner", InterruptingRunner)
-
-    assert main_module.main() == 130
-    assert cleaned_up == [True]
-    assert capsys.readouterr().err == "Interrupted.\n"
-
-
-def test_session_restore_failure_exits_safely_without_traceback(
-    monkeypatch, capsys
+        (RuntimeError("startup failed"), None, ""),
+        (SystemExit("startup stopped"), None, ""),
+    ],
+    ids=["interrupt", "restore-error", "unexpected-error", "system-exit"],
+)
+def test_initialize_failure_cleans_up_and_preserves_exit_behavior(
+    monkeypatch, capsys, failure, exit_code, stderr_text
 ) -> None:
     cleaned_up = []
 
@@ -49,11 +34,7 @@ def test_session_restore_failure_exits_safely_without_traceback(
             pass
 
         def initialize(self):
-            raise main_module.SessionRestoreError(
-                phase="manifest_decode",
-                error_type="JSONDecodeError",
-                ref="manifest",
-            )
+            raise failure
 
         def cleanup(self) -> None:
             cleaned_up.append(True)
@@ -61,21 +42,23 @@ def test_session_restore_failure_exits_safely_without_traceback(
     monkeypatch.setattr(
         main_module,
         "parse_args",
-        lambda: SimpleNamespace(
-            config=None,
-            model=None,
-            resume=None,
-            server=False,
-        ),
+        lambda: SimpleNamespace(config=None, model=None, resume=None, server=False),
     )
     monkeypatch.setattr(main_module, "AppRunner", FailingRunner)
 
-    assert main_module.main() == 1
+    if exit_code is None:
+        with pytest.raises(type(failure)) as raised:
+            main_module.main()
+        assert raised.value is failure
+    else:
+        assert main_module.main() == exit_code
     assert cleaned_up == [True]
     stderr = capsys.readouterr().err
-    assert "phase=manifest_decode" in stderr
-    assert "error_type=JSONDecodeError" in stderr
-    assert "Traceback" not in stderr
+    if exit_code is None:
+        assert stderr == ""
+    else:
+        assert stderr_text in stderr
+        assert "Traceback" not in stderr
 
 
 def test_terminal_status_flushes_progress_to_stderr(capsys) -> None:

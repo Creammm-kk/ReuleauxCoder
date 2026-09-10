@@ -1,5 +1,7 @@
 from unittest.mock import Mock
 
+import pytest
+
 from rich.markdown import Markdown
 
 from reuleauxcoder.domain.agent.events import AgentEvent
@@ -48,33 +50,20 @@ def test_cli_renderer_renders_chat_end_when_requested() -> None:
     renderer.render_content_markdown.assert_called_once_with("final answer")
 
 
-def test_cli_renderer_finalizes_stream_without_rendering_duplicate_chat_end_response() -> (
-    None
-):
+@pytest.mark.parametrize(
+    "streamed", ["hello world", "hello"], ids=["complete", "partial"]
+)
+def test_cli_renderer_finalizes_stream_without_replaying_chat_end(streamed) -> None:
     renderer = _renderer()
     renderer.render_content_markdown = Mock()
     renderer.render_plain_text = Mock()
 
-    render_agent_event(renderer, AgentEvent.stream_token("hello world"))
+    render_agent_event(renderer, AgentEvent.stream_token(streamed))
     render_agent_event(
         renderer, AgentEvent.chat_end("hello world", render_response=False)
     )
 
-    renderer.render_content_markdown.assert_called_once_with("hello world")
-    renderer.render_plain_text.assert_called_once_with("\n")
-
-
-def test_cli_renderer_finalizes_stream_without_tail_patch() -> None:
-    renderer = _renderer()
-    renderer.render_content_markdown = Mock()
-    renderer.render_plain_text = Mock()
-
-    render_agent_event(renderer, AgentEvent.stream_token("hello"))
-    render_agent_event(
-        renderer, AgentEvent.chat_end("hello world", render_response=False)
-    )
-
-    renderer.render_content_markdown.assert_called_once_with("hello")
+    renderer.render_content_markdown.assert_called_once_with(streamed)
     renderer.render_plain_text.assert_called_once_with("\n")
 
 

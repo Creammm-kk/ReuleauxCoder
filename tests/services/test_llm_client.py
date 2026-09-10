@@ -3,6 +3,8 @@ import threading
 import time
 from types import SimpleNamespace
 
+import pytest
+
 import reuleauxcoder.services.llm.client as llm_client_module
 from reuleauxcoder.domain.hooks.base import TransformHook
 from reuleauxcoder.domain.hooks.registry import HookExecutionError, HookRegistry
@@ -492,18 +494,16 @@ def test_llm_rejects_malformed_tool_arguments_with_safe_failure_facts(
         [_FakeChunk(tool_calls=[_fake_tool_call_delta(raw_arguments)])]
     )
 
-    try:
+    with pytest.raises(LLMToolArgumentsError) as raised:
         llm.chat([{"role": "user", "content": "Hi"}])
-    except LLMToolArgumentsError as error:
-        assert error.phase == "response_parse"
-        assert error.code == "invalid_tool_arguments_json"
-        assert error.error_type == "JSONDecodeError"
-        assert error.tool_call_index == 0
-        assert error.__cause__ is None
-        assert error.__context__ is None
-        assert sentinel not in str(error)
-    else:
-        raise AssertionError("malformed tool arguments must terminate the response")
+    error = raised.value
+    assert error.phase == "response_parse"
+    assert error.code == "invalid_tool_arguments_json"
+    assert error.error_type == "JSONDecodeError"
+    assert error.tool_call_index == 0
+    assert error.__cause__ is None
+    assert error.__context__ is None
+    assert sentinel not in str(error)
 
     assert phases[-1].phase == "response_parse"
     assert phases[-1].status == "failed"
@@ -529,13 +529,11 @@ def test_llm_rejects_non_object_tool_arguments_and_accepts_empty_object(
         [_FakeChunk(tool_calls=[_fake_tool_call_delta("[]")])]
     )
 
-    try:
+    with pytest.raises(LLMToolArgumentsError) as raised:
         llm.chat([{"role": "user", "content": "Hi"}])
-    except LLMToolArgumentsError as error:
-        assert error.code == "invalid_tool_arguments_shape"
-        assert error.error_type == "TypeError"
-    else:
-        raise AssertionError("tool arguments must be a JSON object")
+    error = raised.value
+    assert error.code == "invalid_tool_arguments_shape"
+    assert error.error_type == "TypeError"
 
     llm._call_with_retry = lambda _params: iter(  # type: ignore[method-assign]
         [_FakeChunk(tool_calls=[_fake_tool_call_delta("{}")])]
@@ -561,13 +559,11 @@ def test_llm_keeps_tool_argument_failure_when_terminal_telemetry_breaks(
 
     llm._call_with_retry = lambda _params: stream()  # type: ignore[method-assign]
 
-    try:
+    with pytest.raises(LLMToolArgumentsError) as raised:
         llm.chat([{"role": "user", "content": "Hi"}])
-    except LLMToolArgumentsError as error:
-        assert error.code == "invalid_tool_arguments_json"
-        assert error.error_type == "JSONDecodeError"
-    else:
-        raise AssertionError("secondary telemetry must not replace primary failure")
+    error = raised.value
+    assert error.code == "invalid_tool_arguments_json"
+    assert error.error_type == "JSONDecodeError"
 
 
 class _DeferredDispatchProbe(TransformHook[BeforeLLMRequestContext]):
@@ -627,15 +623,13 @@ def test_llm_keeps_dispatch_commit_when_provider_open_fails_after_handoff(
 
     llm._call_with_retry = fail_open  # type: ignore[method-assign]
 
-    try:
+    with pytest.raises(RuntimeError) as raised:
         llm.chat(
             [{"role": "user", "content": "Hi"}],
             hook_registry=registry,
         )
-    except RuntimeError as error:
-        assert str(error) == "provider stream open failed"
-    else:
-        raise AssertionError("provider stream open failure must propagate")
+    error = raised.value
+    assert str(error) == "provider stream open failed"
 
     assert callbacks == ["callback"]
 
@@ -679,21 +673,19 @@ def test_deferred_dispatch_failure_is_safe_terminal_and_blocks_provider(
 
     llm._call_with_retry = open_stream  # type: ignore[method-assign]
 
-    try:
+    with pytest.raises(LLMDispatchCallbackError) as raised:
         llm.chat(
             [{"role": "user", "content": "Hi"}],
             hook_registry=registry,
         )
-    except LLMDispatchCallbackError as error:
-        assert error.phase == "dispatch_callback"
-        assert error.error_type == "RuntimeError"
-        assert str(error) == (
-            "LLM request failed before provider dispatch "
-            "(phase=dispatch_callback, error_type=RuntimeError)"
-        )
-        assert error.__cause__ is None
-    else:
-        raise AssertionError("dispatch callback failure must terminate the request")
+    error = raised.value
+    assert error.phase == "dispatch_callback"
+    assert error.error_type == "RuntimeError"
+    assert str(error) == (
+        "LLM request failed before provider dispatch "
+        "(phase=dispatch_callback, error_type=RuntimeError)"
+    )
+    assert error.__cause__ is None
 
     assert provider_calls == []
     assert llm.last_dispatched_request is None
@@ -772,17 +764,15 @@ def test_deferred_dispatch_failure_survives_diagnostic_reporting_failures(
 
     llm._call_with_retry = open_stream  # type: ignore[method-assign]
 
-    try:
+    with pytest.raises(LLMDispatchCallbackError) as raised:
         llm.chat(
             [{"role": "user", "content": "Hi"}],
             hook_registry=registry,
         )
-    except LLMDispatchCallbackError as error:
-        rendered = str(error)
-        assert error.phase == "dispatch_callback"
-        assert error.error_type == "ValueError"
-    else:
-        raise AssertionError("callback failure must survive diagnostic failures")
+    error = raised.value
+    rendered = str(error)
+    assert error.phase == "dispatch_callback"
+    assert error.error_type == "ValueError"
 
     assert provider_calls == []
     assert callback_secret not in rendered
@@ -819,15 +809,13 @@ def test_deferred_dispatch_effect_disables_ambiguous_provider_retry(
         chat=SimpleNamespace(completions=SimpleNamespace(create=create))
     )
 
-    try:
+    with pytest.raises(TransientConnectionError) as raised:
         llm.chat(
             [{"role": "user", "content": "Hi"}],
             hook_registry=registry,
         )
-    except TransientConnectionError as error:
-        assert str(error) == "ambiguous provider failure"
-    else:
-        raise AssertionError("provider failure must propagate")
+    error = raised.value
+    assert str(error) == "ambiguous provider failure"
 
     assert attempts == [1]
     assert callbacks == ["committed"]
@@ -857,16 +845,12 @@ def test_cancel_after_dispatch_commit_still_hands_payload_to_provider() -> None:
         chat=SimpleNamespace(completions=SimpleNamespace(create=create))
     )
 
-    try:
+    with pytest.raises(LLMRequestCancelled):
         llm.chat(
             [{"role": "user", "content": "Hi"}],
             hook_registry=registry,
             cancellation_event=cancellation,
         )
-    except LLMRequestCancelled:
-        pass
-    else:
-        raise AssertionError("post-commit cancellation must detach the consumer")
 
     assert callback_calls == ["committed"]
     assert provider_called.wait(timeout=1)
@@ -891,18 +875,16 @@ def test_llm_request_transform_rejection_terminates_operation_telemetry() -> Non
     llm = LLM(model="demo-model", api_key="sk-test-12345678", ui_bus=bus)
     llm.performance_monitor = RuntimePerformanceMonitor()
 
-    try:
+    with pytest.raises(HookExecutionError) as raised:
         llm.chat(
             [{"role": "user", "content": "Hi"}],
             hook_registry=registry,
         )
-    except HookExecutionError as error:
-        assert error.phase == "before_llm_request"
-        assert error.hook_name == "reject_request"
-        assert error.error_type == "RuntimeError"
-        assert "request rejected after build" not in str(error)
-    else:
-        raise AssertionError("request transform rejection must propagate")
+    error = raised.value
+    assert error.phase == "before_llm_request"
+    assert error.hook_name == "reject_request"
+    assert error.error_type == "RuntimeError"
+    assert "request rejected after build" not in str(error)
 
     assert [event.phase for event in seen] == ["request_build", "failed"]
     assert seen[-1].status == "failed"
@@ -948,12 +930,10 @@ def test_llm_does_not_retry_without_stream_options_on_transport_error(
 
     llm._call_with_retry = fail  # type: ignore[method-assign]
 
-    try:
+    with pytest.raises(RuntimeError) as raised:
         llm.chat([{"role": "user", "content": "Hi"}])
-    except RuntimeError as error:
-        assert str(error) == "connection dropped"
-    else:
-        raise AssertionError("transport error must propagate")
+    error = raised.value
+    assert str(error) == "connection dropped"
 
     assert attempts == [True]
 
@@ -1059,16 +1039,12 @@ def test_llm_stream_closes_when_agent_scope_is_cancelled() -> None:
     stream = Stream()
     llm._call_with_retry = lambda params: stream  # type: ignore[method-assign]
 
-    try:
+    with pytest.raises(LLMRequestCancelled):
         llm.chat(
             [{"role": "user", "content": "Hi"}],
             on_token=lambda token: cancellation.set(),
             cancellation_event=cancellation,
         )
-    except LLMRequestCancelled:
-        pass
-    else:
-        raise AssertionError("cancelled stream must raise LLMRequestCancelled")
 
     assert stream.closed is True
 
@@ -1100,15 +1076,11 @@ def test_llm_stream_cancel_aborts_during_silent_gap() -> None:
 
     threading.Thread(target=cancel_soon, daemon=True).start()
     started = time.monotonic()
-    try:
+    with pytest.raises(LLMRequestCancelled):
         llm.chat(
             [{"role": "user", "content": "Hi"}],
             cancellation_event=cancellation,
         )
-    except LLMRequestCancelled:
-        pass
-    else:
-        raise AssertionError("silent stream must raise LLMRequestCancelled")
     elapsed = time.monotonic() - started
 
     assert stream.closed is True
@@ -1144,16 +1116,12 @@ def test_llm_cancel_drops_slow_stream_open_and_discards_late_result() -> None:
 
     threading.Thread(target=cancel_soon, daemon=True).start()
     started = time.monotonic()
-    try:
+    with pytest.raises(LLMRequestCancelled):
         llm.chat(
             [{"role": "user", "content": "Hi"}],
             cancellation_event=cancellation,
             hook_registry=registry,
         )
-    except LLMRequestCancelled:
-        pass
-    else:
-        raise AssertionError("slow dispatch must raise LLMRequestCancelled")
     elapsed = time.monotonic() - started
 
     assert elapsed < 1.0
@@ -1215,15 +1183,11 @@ def test_cancelled_detached_retry_cannot_revive_terminal_operation(
         cancellation.set()
 
     threading.Thread(target=cancel_after_open_starts, daemon=True).start()
-    try:
+    with pytest.raises(LLMRequestCancelled):
         llm.chat(
             [{"role": "user", "content": "Hi"}],
             cancellation_event=cancellation,
         )
-    except LLMRequestCancelled:
-        pass
-    else:
-        raise AssertionError("cancelled dispatch must raise LLMRequestCancelled")
 
     terminal_phases = [event.phase for event in seen]
     assert terminal_phases[-1] == "cancelled"
@@ -1263,15 +1227,11 @@ def test_llm_cancel_does_not_wait_for_slow_stream_close() -> None:
 
     threading.Thread(target=cancel_soon, daemon=True).start()
     started = time.monotonic()
-    try:
+    with pytest.raises(LLMRequestCancelled):
         llm.chat(
             [{"role": "user", "content": "Hi"}],
             cancellation_event=cancellation,
         )
-    except LLMRequestCancelled:
-        pass
-    else:
-        raise AssertionError("slow stream must raise LLMRequestCancelled")
     elapsed = time.monotonic() - started
 
     assert elapsed < 1.0
@@ -1282,79 +1242,34 @@ def test_llm_cancel_does_not_wait_for_slow_stream_close() -> None:
     assert close_finished.wait(timeout=1)
 
 
-def test_llm_chat_sends_explicit_thinking_enabled_state() -> None:
+@pytest.mark.parametrize(
+    ("thinking_enabled", "extra_body"),
+    [
+        (True, {"thinking": {"type": "enabled"}}),
+        (False, {"thinking": {"type": "disabled"}}),
+        (None, None),
+    ],
+)
+def test_llm_chat_serializes_thinking_state(thinking_enabled, extra_body) -> None:
     captured = {}
-
     llm = LLM(
         model="demo-model",
         api_key="sk-test-12345678",
-        thinking_enabled=True,
+        thinking_enabled=thinking_enabled,
     )
 
-    def _fake_call_with_retry(params):
+    def fake_call(params):
         captured.update(params)
-        return iter(
-            [
-                _FakeChunk(content="Hello"),
-                _FakeChunk(usage=_FakeUsage(prompt_tokens=1, completion_tokens=1)),
-            ]
-        )
+        return iter([_FakeChunk(content="Hello")])
 
-    llm._call_with_retry = _fake_call_with_retry  # type: ignore[method-assign]
+    llm._call_with_retry = fake_call  # type: ignore[method-assign]
     response = llm.chat([{"role": "user", "content": "Hi"}])
 
     assert response.content == "Hello"
-    assert captured["extra_body"] == {"thinking": {"type": "enabled"}}
-
-
-def test_llm_chat_sends_explicit_thinking_disabled_state() -> None:
-    captured = {}
-
-    llm = LLM(
-        model="demo-model",
-        api_key="sk-test-12345678",
-        thinking_enabled=False,
-    )
-
-    def _fake_call_with_retry(params):
-        captured.update(params)
-        return iter(
-            [
-                _FakeChunk(content="Hello"),
-                _FakeChunk(usage=_FakeUsage(prompt_tokens=1, completion_tokens=1)),
-            ]
-        )
-
-    llm._call_with_retry = _fake_call_with_retry  # type: ignore[method-assign]
-    response = llm.chat([{"role": "user", "content": "Hi"}])
-
-    assert response.content == "Hello"
-    assert captured["extra_body"] == {"thinking": {"type": "disabled"}}
-
-
-def test_llm_chat_omits_thinking_state_when_unset() -> None:
-    captured = {}
-
-    llm = LLM(
-        model="demo-model",
-        api_key="sk-test-12345678",
-        thinking_enabled=None,
-    )
-
-    def _fake_call_with_retry(params):
-        captured.update(params)
-        return iter(
-            [
-                _FakeChunk(content="Hello"),
-                _FakeChunk(usage=_FakeUsage(prompt_tokens=1, completion_tokens=1)),
-            ]
-        )
-
-    llm._call_with_retry = _fake_call_with_retry  # type: ignore[method-assign]
-    response = llm.chat([{"role": "user", "content": "Hi"}])
-
-    assert response.content == "Hello"
-    assert "extra_body" not in captured
+    if extra_body is None:
+        assert "extra_body" not in captured
+    else:
+        assert captured["extra_body"] == extra_body
 
 
 def test_llm_debug_trace_persists_trace_and_emits_ui_event(

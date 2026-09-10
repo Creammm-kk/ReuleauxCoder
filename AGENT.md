@@ -225,6 +225,7 @@ Use `/config` to inspect effective values and their sources. Session overrides l
 - Keep model-context retention separate from human presentation folding.
 - Preserve event correlation and session generation across async work.
 - Long-lived resources need explicit scope, cancellation and disposal.
+- Entrypoint startup-progress and session-notification callbacks log unexpected exceptions with their traceback and propagate them. Do not add diagnostic-delivery buffers or nested fallback sinks to keep startup successful; the CLI cleans up initialized resources before an unexpected startup failure escapes. KeyboardInterrupt remains normal user control.
 - Do not add a second tool implementation to the peer or another interface adapter.
 - Use `rg` for search and `apply_patch` for hand edits.
 - Preserve unrelated user changes in a dirty worktree.

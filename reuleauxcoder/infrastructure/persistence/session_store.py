@@ -12,6 +12,7 @@ import time
 import unicodedata
 import uuid
 from collections.abc import Callable
+from contextlib import closing
 from dataclasses import dataclass, field, replace
 from datetime import datetime
 from pathlib import Path
@@ -581,12 +582,8 @@ class SessionStore:
         self._progress = progress
 
     def _report_progress(self, message: str) -> None:
-        if self._progress is None:
-            return
-        try:
+        if self._progress is not None:
             self._progress(message)
-        except Exception:
-            pass
 
     @property
     def session_projection_path(self) -> Path:
@@ -772,8 +769,8 @@ class SessionStore:
         if scan.failures:
             self._reset_projection_after_failure()
         else:
+            self._report_progress("Rebuilding session query projection...")
             try:
-                self._report_progress("Rebuilding session query projection...")
                 self._projection.replace(scan.projection_rows)
             except KeyboardInterrupt:
                 raise
@@ -3131,66 +3128,73 @@ class SessionStore:
         self._report_progress(f"Reading history ledger ({total_mb:.1f} MB)...")
         started = time.monotonic()
         next_percent = 10
-        try:
-            with events_path.open("rb") as stream:
-                for line in stream:
-                    physical_line_count += 1
-                    failure_type: str | None = None
-                    try:
-                        payload = json.loads(
-                            line,
-                            parse_constant=_reject_non_finite_json,
-                        )
-                        _validate_strict_utf8_tree(payload)
-                        if isinstance(payload, dict):
-                            raw_seq = payload.get("seq")
-                            if (
-                                isinstance(raw_seq, int)
-                                and not isinstance(raw_seq, bool)
-                                and raw_seq >= 0
-                                and raw_seq <= _MAX_PERSISTED_COUNTER
-                            ):
-                                decoded_sequence_floor = max(
-                                    decoded_sequence_floor, raw_seq
-                                )
-                        self._validate_history_event_payload(
-                            payload,
-                            expected_session_id=expected_session_id,
-                        )
-                        event = HistoryEvent.from_dict(payload)
+
+        def read_lines():
+            try:
+                with events_path.open("rb") as stream:
+                    yield from stream
+            except (OSError, UnicodeError) as error:
+                record_issue("history_read", _safe_error_type(error))
+
+        read_bytes = 0
+        with closing(read_lines()) as lines:
+            for line in lines:
+                read_bytes += len(line)
+                physical_line_count += 1
+                failure_type: str | None = None
+                try:
+                    payload = json.loads(
+                        line,
+                        parse_constant=_reject_non_finite_json,
+                    )
+                    _validate_strict_utf8_tree(payload)
+                    if isinstance(payload, dict):
+                        raw_seq = payload.get("seq")
                         if (
-                            event.event_id in seen_event_ids
-                            or event.seq <= previous_seq
+                            isinstance(raw_seq, int)
+                            and not isinstance(raw_seq, bool)
+                            and raw_seq >= 0
+                            and raw_seq <= _MAX_PERSISTED_COUNTER
                         ):
-                            raise ValueError("history event ordering is invalid")
-                        event, _ = self._compact_legacy_request_event(event)
-                    except (
-                        AttributeError,
-                        json.JSONDecodeError,
-                        KeyError,
-                        OverflowError,
-                        RecursionError,
-                        TypeError,
-                        UnicodeError,
-                        ValueError,
-                    ) as error:
-                        failure_type = _safe_error_type(error)
-                    if failure_type is not None:
-                        record_issue("history_decode", failure_type)
-                        continue
-                    events.append(event)
-                    seen_event_ids.add(event.event_id)
-                    previous_seq = event.seq
-                    if total_bytes and time.monotonic() - started >= 0.5:
-                        percent = min(100, int(stream.tell() * 100 / total_bytes))
-                        if percent >= next_percent and percent < 100:
-                            self._report_progress(
-                                f"Reading history ledger... {percent}% "
-                                f"({len(events)} event(s))."
+                            decoded_sequence_floor = max(
+                                decoded_sequence_floor, raw_seq
                             )
-                            next_percent = (percent // 10 + 1) * 10
-        except (OSError, UnicodeError) as error:
-            record_issue("history_read", _safe_error_type(error))
+                    self._validate_history_event_payload(
+                        payload,
+                        expected_session_id=expected_session_id,
+                    )
+                    event = HistoryEvent.from_dict(payload)
+                    if (
+                        event.event_id in seen_event_ids
+                        or event.seq <= previous_seq
+                    ):
+                        raise ValueError("history event ordering is invalid")
+                    event, _ = self._compact_legacy_request_event(event)
+                except (
+                    AttributeError,
+                    json.JSONDecodeError,
+                    KeyError,
+                    OverflowError,
+                    RecursionError,
+                    TypeError,
+                    UnicodeError,
+                    ValueError,
+                ) as error:
+                    failure_type = _safe_error_type(error)
+                if failure_type is not None:
+                    record_issue("history_decode", failure_type)
+                    continue
+                events.append(event)
+                seen_event_ids.add(event.event_id)
+                previous_seq = event.seq
+                if total_bytes and time.monotonic() - started >= 0.5:
+                    percent = min(100, int(read_bytes * 100 / total_bytes))
+                    if percent >= next_percent and percent < 100:
+                        self._report_progress(
+                            f"Reading history ledger... {percent}% "
+                            f"({len(events)} event(s))."
+                        )
+                        next_percent = (percent // 10 + 1) * 10
 
         self._report_progress(
             f"History ledger ready ({len(events)} event(s), "
