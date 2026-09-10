@@ -70,6 +70,18 @@ mkdir -p .rcoder
 cp config.yaml.example .rcoder/config.yaml   # or write your own
 ```
 
+## React TUI
+
+The independent React + Ink frontend lives in [`reuleauxcoder-tui/`](reuleauxcoder-tui/README.md). It uses the Python runtime over JSON-RPC, with top-level slash menus, command panels, approvals and a persistent composer. Requires Node.js 22+ and the repository's Python environment.
+
+```sh
+npm --prefix reuleauxcoder-tui ci
+npm --prefix reuleauxcoder-tui run build
+node reuleauxcoder-tui/dist/cli.js
+```
+
+Use `--cwd /path/to/project` to choose a workspace. The existing `rcoder` entry point continues to use its original interface. See the frontend README for keyboard controls and SSH backends.
+
 ## Remote Bootstrap (Host/Peer)
 
 Configure remote relay in `.rcoder/config.yaml` on machine A:

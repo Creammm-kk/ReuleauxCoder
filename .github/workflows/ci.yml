@@ -37,6 +37,33 @@ jobs:
       - name: Build distributions
         run: uv build
 
+  tui-test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node: [22, 24]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v8.3.2
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+          cache-dependency-path: reuleauxcoder-tui/package-lock.json
+      - name: Sync Python dependencies
+        run: uv sync --locked --extra dev
+      - name: Install TUI dependencies
+        run: npm ci --prefix reuleauxcoder-tui
+      - name: Build and test TUI with real Python runtime and PTY
+        run: npm test --prefix reuleauxcoder-tui
+
   peer-test:
     runs-on: ubuntu-latest
 

@@ -47,7 +47,8 @@ Go tool-execution peer and its relay protocol are a separate service.
 
 All envelopes use JSON-RPC 2.0. Requests have IDs, notifications have no ID, and
 responses contain either `result` or `error`. Request parameters are objects.
-The generic peer also accepts positional parameters and incoming request batches.
+The Python peer also accepts positional parameters and incoming request batches;
+the React frontend uses object parameters and individual messages.
 
 | Method | Direction | Parameters / result |
 | --- | --- | --- |
@@ -62,7 +63,7 @@ The generic peer also accepts positional parameters and incoming request batches
 | `runtime.shutdown` | client request | `{}` → saved session ID or null; stops, cancels interactions, waits and saves once |
 | `interaction.request` | backend request | `{kind, request, timeout_seconds}` → the corresponding typed response |
 | `interaction.cancel` | backend notification | `{request_id}` |
-| `runtime.event` | backend notification | `{event}` with UIEvent |
+| `runtime.event` | backend notification | `{event, session_generation}` with UIEvent; generation scopes command views as well as runtime facts |
 | `runtime.state` | backend notification | `{state}` with RuntimeSnapshot |
 | `runtime.command` | backend notification | `{text}` for the submitted slash text |
 | `runtime.completed` | backend notification | `{result}` with CommandResult |
@@ -73,6 +74,15 @@ Initialize once before submitting. Admission status is `running`, `queued`,
 notifications precede the operation's idle state notification. Snapshots carry
 monotonically increasing revisions so a late response cannot overwrite newer
 state. Frontends must not infer command queue policy from command names.
+
+The independent `reuleauxcoder-tui/` React frontend groups catalog triggers into
+top-level slash menus. `ActionDescription.parameters` contains primitive form
+fields derived from each command dataclass; `preview` explicitly marks safe
+menu previews. Actual panel rows still come from `view.panel`. Tool outcomes,
+including diffs, diagnostics, retention metadata and archive references, are
+public codec records. Runtime snapshots include the live `approval_waiting`
+count. Event generation must be applied before restoring command-view history,
+so a later state snapshot cannot clear the newly restored transcript.
 
 ## Data encoding
 

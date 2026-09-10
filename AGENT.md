@@ -6,7 +6,7 @@ This file describes the current repository, not a future design. Detailed design
 
 - Package version: `0.8.1`.
 - Primary shipped interface: prompt_toolkit-owned interactive mini-TUI; Rich remains the append-only renderer for one-shot, non-TTY, server and remote-peer paths.
-- TUI status: the production CLI now owns a persistent viewport, but there is still no production Textual application.
+- Independent TUI: `reuleauxcoder-tui/` is a React + Ink frontend over stdio JSON-RPC, with top-level slash menus, backend-owned command panels and a persistent composer. Launch it with `node reuleauxcoder-tui/dist/cli.js` after building.
 - Remote peer: `reuleauxcoder-agent/`, a CLI-only Go peer.
 - Runtime supports sessions, approvals, hooks/extensions, skills, MCP, subagents, LSP, local/remote tools, streaming output, and context compression.
 
@@ -26,6 +26,11 @@ reuleauxcoder/
 reuleauxcoder-agent/
 ├── cmd/reuleauxcoder-agent/
 └── internal/{client,process,protocol,runner,terminal,tools,workspace}/
+
+reuleauxcoder-tui/
+├── src/{protocol,state,ui}/
+├── src/cli.tsx
+└── test/            # real Python runtime, Ink input and PTY integration
 ```
 
 Layer rules:
@@ -91,6 +96,8 @@ Product tools in `extensions/tools/builtin/` compose those primitives. The Go pe
 Output retention is tool-directed through `ToolRetentionHint`: read uses head/anchor semantics, shell uses tail semantics, and search/list tools may use head-tail. Timeout/cancel outcomes keep partial output; the CLI shows a rolling five-line live tail while the agent retains the full result subject to context policy.
 
 ## CLI and presentation
+
+The independent React TUI lives in `reuleauxcoder-tui/`. Its protocol client owns framing and reverse interactions; state reducers retain complete content and drafts; React renders cached visible rows. The frontend derives menu groups and primitive form fields from the backend catalog, and consumes command-owned panel trees. Slash input selects a top-level menu. F2 exposes session/plan/job/startup facts; F4 expands reasoning and full structured tool output. The launcher owns a stdio backend process, with `--backend` supporting an SSH subprocess. See its README for parity, controls and verification.
 
 The CLI is split by responsibility:
 

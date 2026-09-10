@@ -70,6 +70,18 @@ mkdir -p .rcoder
 cp config.yaml.example .rcoder/config.yaml   # 或自行编写
 ```
 
+## React TUI
+
+独立的 React + Ink 前端位于 [`reuleauxcoder-tui/`](reuleauxcoder-tui/README.md)，通过 JSON-RPC 使用 Python 运行时，提供一级 slash 菜单、命令面板、审批和固定输入区。需要 Node.js 22+ 及本仓库的 Python 环境。
+
+```sh
+npm --prefix reuleauxcoder-tui ci
+npm --prefix reuleauxcoder-tui run build
+node reuleauxcoder-tui/dist/cli.js
+```
+
+用 `--cwd /path/to/project` 指定工作区。现有 `rcoder` 入口继续使用原界面；快捷键、功能对应和 SSH 后端用法见前端 README。
+
 ## 远端 Bootstrap（Host/Peer）
 
 先在 A 机的 `.rcoder/config.yaml` 中配置 remote relay：
