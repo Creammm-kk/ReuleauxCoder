@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
-from typing import Any, Protocol
+from typing import Any
 
 from reuleauxcoder.domain.extensions.manifest import (
     EXTENSION_API_VERSION,
@@ -13,12 +13,6 @@ from reuleauxcoder.domain.extensions.manifest import (
     ExtensionScope,
     SubagentPolicy,
 )
-
-
-class ExtensionInstance(Protocol):
-    """Optional lifecycle supported by instantiated extensions."""
-
-    def dispose(self) -> None: ...
 
 
 @dataclass(frozen=True, slots=True)

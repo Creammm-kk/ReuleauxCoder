@@ -1,32 +1,9 @@
 """Small resize-safe Rich primitives shared by CLI presenters."""
 
-from rich.console import Console
 from rich.text import Text
 
 from reuleauxcoder.presentation.policy import fold_text
 from reuleauxcoder.interfaces.cli.theme import CLITheme, DEFAULT_CLI_THEME
-
-
-def render_diff_panel(
-    result: str,
-    console: Console,
-    *,
-    max_lines: int | None = None,
-    max_chars: int | None = None,
-    theme: CLITheme = DEFAULT_CLI_THEME,
-) -> None:
-    """Render a diff without width-dependent box borders.
-
-    ``soft_wrap`` leaves wrapping to the terminal, so existing scrollback can
-    reflow when SIGWINCH changes the window width.
-    """
-    text = build_diff_text(
-        result,
-        max_lines=max_lines,
-        max_chars=max_chars,
-        theme=theme,
-    )
-    console.print(text, soft_wrap=True)
 
 
 def build_diff_text(

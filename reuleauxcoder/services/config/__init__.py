@@ -1,4 +1,4 @@
-"""Config services - configuration loading and validation."""
+"""Configuration loading services."""
 
 from reuleauxcoder.services.config.loader import ConfigLoader
 

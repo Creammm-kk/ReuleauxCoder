@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import dataclass
 
 from reuleauxcoder.app.commands.panels import (
     CommandPanelRegistry,
@@ -51,40 +52,41 @@ from reuleauxcoder.extensions.command.builtin.thinking import (
 
 CommandRegistrar = Callable[[ActionRegistry], None]
 
-_BUILTIN_COMMAND_REGISTRARS: tuple[CommandRegistrar, ...] = (
-    register_approval_actions,
-    register_mcp_actions,
-    register_mode_actions,
-    register_model_actions,
-    register_process_actions,
-    register_session_actions,
-    register_skill_actions,
-    register_subagent_job_actions,
-    register_system_actions,
-    register_thinking_actions,
-)
 
-_BUILTIN_COMMAND_PANEL_SPECS: tuple[CommandPanelSpec, ...] = (
-    approval_panel_spec(),
-    mcp_panel_spec(),
-    mode_panel_spec(),
-    model_panel_spec(),
-    processes_panel_spec(),
-    sessions_panel_spec(),
-    skills_panel_spec(),
-    subagent_jobs_panel_spec(),
-    thinking_panel_spec(),
+@dataclass(frozen=True, slots=True)
+class _CommandFeature:
+    """Keep each feature's actions and optional interactive panel together."""
+
+    register_actions: CommandRegistrar
+    panel: CommandPanelSpec | None = None
+
+
+_BUILTIN_COMMAND_FEATURES = (
+    _CommandFeature(register_approval_actions, approval_panel_spec()),
+    _CommandFeature(register_mcp_actions, mcp_panel_spec()),
+    _CommandFeature(register_mode_actions, mode_panel_spec()),
+    _CommandFeature(register_model_actions, model_panel_spec()),
+    _CommandFeature(register_process_actions, processes_panel_spec()),
+    _CommandFeature(register_session_actions, sessions_panel_spec()),
+    _CommandFeature(register_skill_actions, skills_panel_spec()),
+    _CommandFeature(register_subagent_job_actions, subagent_jobs_panel_spec()),
+    _CommandFeature(register_system_actions),
+    _CommandFeature(register_thinking_actions, thinking_panel_spec()),
 )
 
 
 def builtin_command_registrars() -> tuple[CommandRegistrar, ...]:
     """Return builtin registrars in stable schema/presentation order."""
-    return _BUILTIN_COMMAND_REGISTRARS
+    return tuple(feature.register_actions for feature in _BUILTIN_COMMAND_FEATURES)
 
 
 def builtin_command_panel_specs() -> tuple[CommandPanelSpec, ...]:
     """Return command-owned panel contributions in stable feature order."""
-    return _BUILTIN_COMMAND_PANEL_SPECS
+    return tuple(
+        feature.panel
+        for feature in _BUILTIN_COMMAND_FEATURES
+        if feature.panel is not None
+    )
 
 
 def create_builtin_command_panel_registry() -> CommandPanelRegistry:

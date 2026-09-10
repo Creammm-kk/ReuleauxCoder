@@ -125,7 +125,7 @@ Current CLI behavior:
 
 ## Commands and interactions
 
-`app/commands/` contains the registry, parser, help generation, typed effects and shared view models. Built-ins expose explicit `register_actions` contributions under `extensions/command/builtin/`; `app/commands/loader.py` composes them in a stable order.
+`app/commands/` contains the registry, parser, help generation, typed effects and shared view models. Built-ins expose explicit `register_actions` and optional `command_panel_spec` contributions under `extensions/command/builtin/`. The single `_BUILTIN_COMMAND_FEATURES` catalog pairs each feature's actions with its panel; the action loader and panel registry derive their stable order from that catalog. Keep command-specific interaction definitions in their feature modules and framework-specific rendering, focus and keyboard handling in interface adapters.
 
 Scope labels in help:
 

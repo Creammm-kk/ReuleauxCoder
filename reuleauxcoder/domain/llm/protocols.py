@@ -34,15 +34,3 @@ class LLMProtocol(Protocol):
     ) -> LLMResponse:
         """Dispatch one fully prepared provider request."""
         ...
-
-
-class ToolSchemaProtocol(Protocol):
-    """Protocol for tool schema generation."""
-
-    name: str
-    description: str
-    parameters: dict
-
-    def schema(self) -> dict:
-        """Generate OpenAI function-calling schema."""
-        ...

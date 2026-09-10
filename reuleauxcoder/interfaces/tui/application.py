@@ -649,11 +649,6 @@ class MiniTUIApplication:
     def _panel_height(self) -> int:
         return len(self._panel_rows())
 
-    def _panel_lines(self) -> tuple[str, ...]:
-        return tuple(
-            "".join(text for _style, text in row) for row in self._panel_rows()
-        )
-
     def _panel_rows(self) -> tuple[tuple[tuple[str, str], ...], ...]:
         details = (
             # MODEL lives in the always-visible right-side context tail.

@@ -11,15 +11,6 @@ import time
 import uuid
 
 
-@dataclass(frozen=True, slots=True)
-class AgentBudget:
-    max_rounds: int = 20
-    max_tool_calls: int = 80
-    max_tokens: int | None = None
-    timeout_seconds: int = 300
-    max_depth: int = 1
-
-
 @dataclass(slots=True)
 class SubagentResult:
     status: str

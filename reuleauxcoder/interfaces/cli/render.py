@@ -28,7 +28,6 @@ from reuleauxcoder.domain.runtime.events import (
     TurnStarted,
 )
 from reuleauxcoder.interfaces.cli.views.registry import create_cli_view_registry
-from reuleauxcoder.interfaces.cli.terminal import render_diff_panel
 from reuleauxcoder.interfaces.cli.history import CLIHistoryPresenter
 from reuleauxcoder.interfaces.cli.activity import CLIActivityPresenter
 from reuleauxcoder.interfaces.cli.theme import CLITheme, DEFAULT_CLI_THEME
@@ -303,16 +302,6 @@ class CLIRenderer:
     def _render_subagent_completed(self, payload: SubagentFinished) -> None:
         """Render a concise sub-agent completion notification."""
         self.history.subagent_finished(payload)
-
-    def _render_diff(self, result: str) -> None:
-        """Render a diff with syntax highlighting."""
-        render_diff_panel(
-            result,
-            self.console,
-            theme=self.theme,
-            max_lines=self.policy.tool_preview_lines,
-            max_chars=self.policy.tool_preview_chars,
-        )
 
     def _render_error(self, message: str | None) -> None:
         """Render an error message."""

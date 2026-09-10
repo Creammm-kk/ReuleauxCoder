@@ -47,7 +47,6 @@ from reuleauxcoder.services.llm.providers import (
 )
 
 
-MAX_DEBUG_CONTENT_CHARS = 400
 MAX_DEBUG_STREAM_EVENTS = 200
 LLM_MAX_ATTEMPTS = 3
 
@@ -304,11 +303,6 @@ def _cancellable_stream_chunks(stream, cancellation_event):
             _close_stream_detached(stream)
         else:
             _close_stream(stream)
-
-
-def _trim_text(value: Any, limit: int = MAX_DEBUG_CONTENT_CHARS) -> str:
-    text = str(value)
-    return text[:limit] + ("..." if len(text) > limit else "")
 
 
 def canonicalize_request_params(params: dict[str, Any]) -> dict[str, Any]:
