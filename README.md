@@ -247,6 +247,15 @@ Sessions persist an append-only JSONL ledger, canonical replay state with
 wire-affecting settings, exact hook-transformed request audits, usage observations,
 Plan/Progress state, validated semantic checkpoints, and tool artifacts. Resume
 preserves the committed prefix and appends environment/config changes at its tail.
+The first message creates a discoverable snapshot immediately. During generation,
+response text, visible reasoning, and tool output are checkpointed to the ledger
+about once per second (or sooner at 64 Ki characters); completed tool results are
+written immediately. After a crash, saved output reappears as **Recovered … —
+session interrupted**, without becoming a completed model response or rerunning
+tools. A crash can still lose the latest pending batch. Snapshot files are flushed
+before atomic replacement, with directory syncing on POSIX. Use `rcoder -r <id>`
+or `/session <id>` to restore a session. Unsent input drafts are not covered by
+backend session persistence.
 
 ## CLI Options
 

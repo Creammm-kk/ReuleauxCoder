@@ -79,6 +79,8 @@ The agent receives complete tool output unless the model-context truncation hook
 
 Tool start/finish runtime facts are ledgered independently of model/UI text, including status, exit code, timeout/error kind, truncation and archive checksum. Subagent verification derives objective evidence and failure state from these events rather than trusting the child's prose.
 
+Live session persistence writes the first snapshot synchronously so a new session is discoverable before its first reply. `domain/output_journal.py` checkpoints response/reasoning/tool chunks every second or 64 Ki characters and immediately records final tool output. Message commits acknowledge matching stream IDs in the same durable event. Recovery projects unacknowledged output into the human transcript, without changing provider messages or automatically replaying work. Torn ledger tails are separated before new appends; snapshots fsync before replacement and sync directories on POSIX. Unsent frontend drafts remain separate from backend persistence.
+
 ## Workspace and process primitives
 
 - `domain/workspace.py`: `WorkspacePort` and filesystem result types.

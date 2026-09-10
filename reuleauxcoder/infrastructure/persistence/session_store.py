@@ -3306,10 +3306,31 @@ class SessionStore:
             if not isinstance(source, str) or not source:
                 raise ValueError("history message source is invalid")
             validate_provider_message(event_payload.get("message"))
+            stream_ids = event_payload.get("output_stream_ids", [])
+            if not isinstance(stream_ids, list) or not all(
+                isinstance(value, str) and value for value in stream_ids
+            ):
+                raise ValueError("history output acknowledgements are invalid")
             for key in ("steering_id", "attempt_id"):
                 value = event_payload.get(key)
                 if value is not None and (not isinstance(value, str) or not value):
                     raise ValueError("history message control metadata is invalid")
+        elif kind == "output_checkpoint":
+            if (
+                not isinstance(event_payload.get("stream_id"), str)
+                or not event_payload["stream_id"]
+                or event_payload.get("kind") not in ("response", "reasoning", "tool")
+                or not isinstance(event_payload.get("text"), str)
+                or not isinstance(event_payload.get("replace", False), bool)
+                or any(
+                    value is not None and not isinstance(value, str)
+                    for value in (
+                        event_payload.get("tool_call_id"),
+                        event_payload.get("tool_name"),
+                    )
+                )
+            ):
+                raise ValueError("history output checkpoint is invalid")
         elif kind == "context_view_committed":
             reason = event_payload.get("reason")
             history_version = event_payload.get("history_version")

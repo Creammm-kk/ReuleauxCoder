@@ -9,6 +9,7 @@ from typing import Any
 from reuleauxcoder.domain.context.replay import ReplayEnvelope, RequestEnvelope
 from reuleauxcoder.domain.context.checkpoint import CompactionCheckpoint
 from reuleauxcoder.domain.history import HistoryEvent
+from reuleauxcoder.domain.output_journal import interrupted_output
 from reuleauxcoder.domain.llm.context_messages import is_synthetic_context_message
 
 MAX_SESSION_PREVIEW_CHARS = 120
@@ -299,6 +300,32 @@ class Session:
             text = _display_message_text(message)
             if text:
                 entries.append({"role": role, "content": text})
+
+        recovered = interrupted_output(self.history_events)
+        if recovered or not self.history_behavior_projection_safe:
+            # Unfinished output is a human transcript projection, never model input.
+            timeline = [
+                (seq, {"role": "assistant", "content": text}) for seq, text in recovered
+            ]
+            for event in self.history_events:
+                if event.kind != "message_committed":
+                    continue
+                message = event.payload["message"]
+                role = message.get("role")
+                if role in ("user", "assistant") and (
+                    text := _display_message_text(message)
+                ):
+                    timeline.append((event.seq, {"role": role, "content": text}))
+            history_entries = [
+                entry for _, entry in sorted(timeline, key=lambda item: item[0])
+            ]
+            known = {(entry["role"], entry["content"]) for entry in history_entries}
+            # A damaged ledger must not hide content retained by the snapshot.
+            entries = [
+                entry
+                for entry in entries
+                if (entry["role"], entry["content"]) not in known
+            ] + history_entries
 
         user_positions = [
             index for index, entry in enumerate(entries) if entry["role"] == "user"

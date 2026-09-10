@@ -190,6 +190,9 @@ class RuntimeServer:
                 model=self.agent.llm.model,
                 saved_at="",
                 messages=list(self.agent.messages),
+                history_events=list(self.agent.history_ledger.events),
+                history_behavior_projection_safe=self.agent.history_completeness
+                != "degraded",
             ).get_recent_conversation(max_user_turns=3)
             controller = self.agent.plan_controller
             result = encode(

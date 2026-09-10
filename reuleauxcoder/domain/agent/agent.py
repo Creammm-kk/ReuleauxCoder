@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 from collections.abc import Callable, Iterable
+from contextlib import nullcontext
 from typing import Any, TYPE_CHECKING, Optional, List
 from dataclasses import dataclass, field
 from enum import Enum
@@ -40,6 +41,7 @@ from reuleauxcoder.domain.hooks import (
     HookRegistry,
 )
 from reuleauxcoder.domain.history import HistoryEvent, HistoryLedger
+from reuleauxcoder.domain.output_journal import OutputJournal
 from reuleauxcoder.domain.plan import PlanController
 from reuleauxcoder.domain.runtime.performance import RuntimePerformanceMonitor
 from reuleauxcoder.domain.extensions import HookExtensionAdapter, LifecycleCoordinator
@@ -223,6 +225,7 @@ class Agent:
         self._resume_runtime_descriptor_hash: str | None = None
         self.plan_controller = PlanController(self)
         self._session_persist_callback = None
+        self._output_journal: OutputJournal | None = None
         self._session_persist_accepts_deferred: bool | None = None
         self._control_plane_recovery_required = False
         for tool in self.tools:
@@ -364,14 +367,20 @@ class Agent:
                 if self._current_turn_id is not None
                 else None
             )
-            self.history_ledger.append_message(
-                message,
-                source=source,
-                agent_id=self.agent_id,
-                turn_id=self._current_turn_id,
-                api_round_id=api_round_id,
-                metadata=history_metadata,
+            commit = (
+                self._output_journal.commit(message)
+                if self._output_journal
+                else nullcontext({})
             )
+            with commit as output_metadata:
+                self.history_ledger.append_message(
+                    message,
+                    source=source,
+                    agent_id=self.agent_id,
+                    turn_id=self._current_turn_id,
+                    api_round_id=api_round_id,
+                    metadata={**(history_metadata or {}), **output_metadata},
+                )
             self.state.messages.append(message)
             self._context_revision += 1
             self.persist_runtime_snapshot(deferred=True)
@@ -380,15 +389,29 @@ class Agent:
         accepts_deferred = self._persistence_callback_accepts_deferred(callback)
         if accepts_deferred is None:
             raise TypeError("persistence callback signature is unavailable")
+        if self._output_journal is not None:
+            self._output_journal.close()
         self.history_ledger.bind_context(
             session_id=getattr(self, "current_session_id", None),
             agent_id=self.agent_id,
         )
         self.history_ledger.bind_jsonl(events_path)
+        generation = self.session_generation
+        self._output_journal = OutputJournal(
+            self.history_ledger,
+            agent_id=self.agent_id,
+            on_error=lambda error: self.record_runtime_issue(
+                "output_checkpoint", type(error).__name__, "history_ledger",
+                session_generation=generation,
+            ),
+        )
         self._session_persist_callback = callback
         self._session_persist_accepts_deferred = accepts_deferred
 
     def unbind_session_persistence(self) -> None:
+        if self._output_journal is not None:
+            self._output_journal.close()
+            self._output_journal = None
         callback = self._session_persist_callback
         settle = getattr(callback, "close", None)
         if not callable(settle):
@@ -1221,7 +1244,9 @@ class Agent:
                     continue
 
     def _record_runtime_fact(self, event: AgentEvent) -> None:
-        """Persist correctness-relevant runtime facts; omit high-rate chunks."""
+        """Persist runtime facts and batch unfinished output separately."""
+        if self._output_journal is not None:
+            self._output_journal.record(event)
         if event.event_type is AgentEventType.TOOL_CALL_START:
             self.history_ledger.append(
                 "tool_call_started",
@@ -1681,12 +1706,11 @@ class Agent:
         # calls that were just reconciled above.
         self._flush_pending_subagent_injections()
 
-        self._emit_event(AgentEvent.chat_start(user_input))
-
         # Add user message
         self._append_message(
             {"role": "user", "content": user_input}, source="user_input"
         )
+        self._emit_event(AgentEvent.chat_start(user_input))
 
         # Run the loop
         try:
@@ -1724,6 +1748,9 @@ class Agent:
                 turn_id=self._current_turn_id,
             )
             raise
+        finally:
+            if self._output_journal is not None:
+                self._output_journal.close()
 
         self._emit_event(
             AgentEvent.chat_end(
