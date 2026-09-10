@@ -9,7 +9,42 @@ import {decode, record, type Json} from '../src/protocol/wire.js';
 import {TuiController} from '../src/state/controller.js';
 import {App} from '../src/ui/App.js';
 import {activityFor} from '../src/ui/activity.js';
+import {editor} from '../src/state/editor.js';
+import {safe} from '../src/ui/format.js';
 import {until} from './helpers.js';
+
+test('startup logo slides away once, returning rows to output without moving the composer', async t => {
+  const c = new TuiController(new RuntimeClient(new RpcPeer(new PassThrough(), new PassThrough())));
+  t.after(() => {c.client.peer.close(); c.dispose();});
+  c.session.connected = true;
+  c.session.add('assistant', 'Reuleaux', Array.from({length: 60}, (_, index) => `line ${index}`).join('\n'));
+  c.composer = editor('中文草稿 👩🏽‍💻');
+  const app = render(<App controller={c}/>); t.after(() => app.cleanup());
+  await until(() => app.lastFrame()?.includes('Ready'));
+  c.resize(45, 140);
+  await until(() => app.lastFrame()?.includes('█████▄'));
+  const first = app.frames.length - 1;
+  const viewport = c.viewportRows;
+  const revision = c.snapshot();
+  const position = (frame: string, text: string) => safe(frame).split('\n').findIndex(row => row.includes(text));
+  const inputRow = position(app.lastFrame()!, '┌─ YOU');
+  await until(() => app.lastFrame()?.includes('REULEAUX') && !app.lastFrame()?.includes('██'));
+  const frames = app.frames.slice(first);
+  const bandRows = frames.map(frame => position(frame, '► SESSION'));
+  assert(bandRows.some(row => row > bandRows.at(-1)! && row < bandRows[0]), 'height is released progressively');
+  assert.equal(c.viewportRows, viewport + 3);
+  assert.equal(c.snapshot(), revision, 'startup animation stays local to the UI');
+  for (const frame of frames) {
+    assert.equal(position(frame, '┌─ YOU'), inputRow);
+    assert(frame.includes('中文草稿 👩🏽‍💻'));
+    assert(frame.includes('line 59'), 'output continues following the latest row');
+  }
+  c.resize(24, 80);
+  await until(() => app.lastFrame()?.split('\n').length === 23);
+  c.resize(45, 140);
+  await until(() => app.lastFrame()?.split('\n').length === 44);
+  assert(!app.lastFrame()?.includes('██'), 'resizing does not replay the introduction');
+});
 
 test('busy animation survives silent model and tool phases, then stops without adding history', async t => {
   const c = new TuiController(new RuntimeClient(new RpcPeer(new PassThrough(), new PassThrough())));

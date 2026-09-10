@@ -9,7 +9,7 @@ import {between, fit, rail, frameEdge, frameRow, keyHint, paint} from './theme.j
 import {activityFor, ActivityLine} from './activity.js';
 import {queuedRows} from './queued.js';
 import {sidebarRows, workbenchLayout} from './sidebar.js';
-import {consoleChrome} from './chrome.js';
+import {consoleChrome, useLogoCollapse} from './chrome.js';
 
 function Rows({rows, height, width}: {rows: string[]; height: number; width: number}) {
   return <Box flexDirection="column" height={height} flexShrink={0}>{Array.from({length: height}, (_, index) => <Text key={index} wrap="truncate">{paint.surface(fit(rows[index] || '', width))}</Text>)}</Box>;
@@ -20,6 +20,7 @@ export function App({controller: c, alternateScreen = false}: {controller: TuiCo
   const {stdout} = useStdout();
   const {exit} = useApp();
   const layout = useMemo(() => new TranscriptLayout(), []);
+  const hiddenLogoRows = useLogoCollapse();
   useEffect(() => {
     const resize = () => c.resize(stdout.rows || 24, stdout.columns || 80);
     const quit = (saved: string | null, error?: Error) => exit(error ?? saved);
@@ -35,7 +36,7 @@ export function App({controller: c, alternateScreen = false}: {controller: TuiCo
   const width = dimensions.main;
   const height = Math.max(6, c.rows - 1);
   const liveActivity = activityFor(c);
-  const chrome = consoleChrome(c, dimensions.width, c.session.fatal ? 'Disconnected' : liveActivity?.label ?? 'Ready');
+  const chrome = consoleChrome(c, dimensions.width, c.session.fatal ? 'Disconnected' : liveActivity?.label ?? 'Ready', hiddenLogoRows);
   const footerHeight = chrome.status ? 2 : 1;
   const composerWidth = Math.max(1, dimensions.width - 6);
   const composerHeight = Math.min(4, Math.max(1, inputRows(c.composer, composerWidth, 4).length));

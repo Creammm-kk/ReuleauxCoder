@@ -1,3 +1,4 @@
+import {useEffect, useState} from 'react';
 import type {TuiController} from '../state/controller.js';
 import {safe} from './format.js';
 import {between, fit, paint, type AccentRole} from './theme.js';
@@ -5,8 +6,23 @@ import {statusLine} from './viewport.js';
 
 const compact = (text: string) => safe(text).replace(/\s+/g, ' ').trim();
 
+/** Play once per frontend mount, including when a small terminal hides the logo. */
+export function useLogoCollapse() {
+  const [hiddenRows, setHiddenRows] = useState(0);
+  useEffect(() => {
+    let rows = 0;
+    const collapse = () => {
+      setHiddenRows(++rows);
+      if (rows < 3) timer = setTimeout(collapse, 120);
+    };
+    let timer = setTimeout(collapse, 2000);
+    return () => clearTimeout(timer);
+  }, []);
+  return hiddenRows;
+}
+
 /** Decorative rows yield to the conversation in short terminals. */
-export function consoleChrome(c: TuiController, width: number, phase: string) {
+export function consoleChrome(c: TuiController, width: number, phase: string, hiddenLogoRows: number) {
   const {state, git} = c.session;
   const role: AccentRole = c.session.fatal ? 'error' : c.active || state.stopping || state.approval_waiting ? 'warning' : 'accent';
   const connection = c.session.fatal ? '● DISCONNECTED' : c.session.connected ? '● SYSTEM ONLINE' : '◌ CONNECTING';
@@ -14,14 +30,14 @@ export function consoleChrome(c: TuiController, width: number, phase: string) {
   const workspace = statusLine([compact(state.workspace), branch], width - 10);
   const model = compact(state.model);
   const context = state.context_limit ? `${Math.round(state.context_tokens / state.context_limit * 100)}% context` : `${state.context_tokens} tokens`;
-  const roomy = c.rows >= 34 && width >= 70;
+  const roomy = c.rows >= 34 && width >= 70 && hiddenLogoRows < 3;
   const header = roomy ? [
     between(paint.accent(' █████▄   R E U L E A U X'), paint[role](connection), width),
     between(paint.accent(' ██  ██   ') + paint.info(model), paint.secondary(context), width),
     paint.accent(' ████▀'),
     paint.accent(' ██  ██   ') + paint.muted(workspace),
     '',
-  ] : [
+  ].slice(hiddenLogoRows) : [
     between(paint.accent(paint.bold('REULEAUX')) + paint.muted(' / CODER'), paint[role](connection), width),
     ...(c.rows >= 20 ? [between(paint.muted(workspace), paint.info(statusLine([model, context], Math.floor(width / 2))), width)] : []),
   ];
