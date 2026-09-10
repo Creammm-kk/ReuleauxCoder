@@ -11,7 +11,7 @@ from reuleauxcoder.interfaces.cli.views.common import (
     stop_stream_and_clear,
 )
 from reuleauxcoder.interfaces.view_registry import ViewRendererSpec
-from reuleauxcoder.app.runtime.approval import ApprovalView
+from reuleauxcoder.app.commands.approval_views import ApprovalView
 from reuleauxcoder.extensions.skills.models import SkillsViewModel
 from reuleauxcoder.app.commands.view_models import (
     HelpViewModel,

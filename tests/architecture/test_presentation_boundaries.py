@@ -51,15 +51,41 @@ def test_cli_renderer_does_not_restore_legacy_string_protocols() -> None:
     assert "event.data" not in view_source
 
 
-def test_command_extensions_do_not_import_cli_or_ui_frameworks() -> None:
-    forbidden = ("rich", "textual", "reuleauxcoder.interfaces.cli")
+def test_command_application_and_features_do_not_import_frontends() -> None:
+    forbidden = ("rich", "textual", "prompt_toolkit", "reuleauxcoder.interfaces")
     violations = []
-    command_root = ROOT / "reuleauxcoder" / "extensions" / "command"
-    for path in command_root.rglob("*.py"):
+    paths = [
+        *(ROOT / "reuleauxcoder/extensions/command").rglob("*.py"),
+        *(ROOT / "reuleauxcoder/app/commands").rglob("*.py"),
+        *(ROOT / "reuleauxcoder/app/rpc").rglob("*.py"),
+        ROOT / "reuleauxcoder/app/ui_events.py",
+        ROOT / "reuleauxcoder/app/interaction_contracts.py",
+    ]
+    for path in paths:
         for imported in _imports(path):
             if imported.startswith(forbidden):
                 violations.append(f"{path.relative_to(ROOT)} imports {imported}")
     assert violations == []
+
+
+def test_command_frontends_depend_on_contracts_without_dispatch_or_storage():
+    forbidden = (
+        "reuleauxcoder.app.commands.service",
+        "reuleauxcoder.app.commands.registry",
+        "reuleauxcoder.extensions.command",
+        "reuleauxcoder.infrastructure.persistence",
+        "reuleauxcoder.app.rpc.server",
+        "reuleauxcoder.domain.agent",
+    )
+    paths = [
+        ROOT / "reuleauxcoder/interfaces/cli/repl.py",
+        ROOT / "reuleauxcoder/interfaces/tui/application.py",
+        ROOT / "reuleauxcoder/interfaces/tui/selection_host.py",
+        ROOT / "reuleauxcoder/interfaces/tui/command_popup.py",
+        ROOT / "reuleauxcoder/interfaces/tui/input_router.py",
+    ]
+    for path in paths:
+        assert not any(name.startswith(forbidden) for name in _imports(path)), path
 
 
 def test_command_handlers_only_use_single_typed_effect_channel() -> None:

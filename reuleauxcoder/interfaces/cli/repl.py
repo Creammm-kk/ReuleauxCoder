@@ -1,6 +1,5 @@
 """Interactive REPL loop."""
 
-import time
 from contextlib import AbstractContextManager
 from pathlib import Path
 from typing import cast
@@ -9,48 +8,34 @@ from prompt_toolkit import prompt as pt_prompt
 from prompt_toolkit.history import FileHistory
 
 from reuleauxcoder import __version__
-from reuleauxcoder.app.runtime.session_state import (
-    build_session_persistence_kwargs,
-    build_session_runtime_state,
-)
-from reuleauxcoder.app.commands.registry import ActionRegistry
 from reuleauxcoder.infrastructure.fs.paths import ensure_user_dirs
-from reuleauxcoder.infrastructure.persistence.session_store import SessionStore
-from reuleauxcoder.interfaces.cli.commands import handle_command
+from reuleauxcoder.app.rpc.client import RuntimeClient
 from reuleauxcoder.interfaces.cli.render import show_banner
 from reuleauxcoder.interfaces.cli.prompt import (
     FORGE_USER_PROMPT_STYLE,
     forge_active_prompt,
 )
-from reuleauxcoder.app.ui_events import UIEvent, UIEventBus, UIEventKind
-from reuleauxcoder.app.commands.capabilities import UIProfile
+from reuleauxcoder.app.ui_events import UIEvent, UIEventBus
 
 
 def run_repl(
-    agent,
-    config,
+    runtime: RuntimeClient,
     ui_bus: UIEventBus,
-    ui_profile: UIProfile,
-    action_registry: ActionRegistry,
-    current_session_id: str | None = None,
-    sessions_dir: Path | None = None,
-    session_exit_time: str | None = None,
-    skills_service=None,
     output_coordinator=None,
     interaction_coordinator=None,
     startup_events: tuple[UIEvent, ...] = (),
 ) -> None:
     ensure_user_dirs()
     show_banner(
-        config.model,
-        config.base_url,
+        runtime.state.model,
+        runtime.info["base_url"],
         __version__,
         startup_events=startup_events,
     )
 
     hist_path = (
-        str(Path(config.history_file).expanduser())
-        if getattr(config, "history_file", None)
+        str(Path(runtime.info["history_file"]).expanduser())
+        if runtime.info["history_file"]
         else None
     )
     history = (
@@ -58,16 +43,6 @@ def run_repl(
         if hist_path
         else FileHistory(str(Path.cwd() / ".rcoder" / "history"))
     )
-    agent.current_session_id = current_session_id
-
-    pending_resume_prefix: str | None = None
-    if session_exit_time is not None:
-        current_time = time.strftime("%Y-%m-%d %H:%M:%S %Z")
-        pending_resume_prefix = (
-            f"[SESSION_RESUME] User returned to the session at {current_time} "
-            f"(last left at {session_exit_time}).\n\n"
-        )
-
     while True:
         if output_coordinator is not None:
             output_coordinator.drain()
@@ -90,22 +65,7 @@ def run_repl(
                 ).strip()
         except (EOFError, KeyboardInterrupt):
             ui_bus.info("\nBye!")
-            if agent.messages and config.session_auto_save:
-                sid = SessionStore(sessions_dir).save(
-                    agent.messages,
-                    config.model,
-                    current_session_id,
-                    is_exit=True,
-                    total_prompt_tokens=agent.state.total_prompt_tokens,
-                    total_completion_tokens=agent.state.total_completion_tokens,
-                    active_mode=getattr(agent, "active_mode", None),
-                    runtime_state=build_session_runtime_state(config, agent),
-                    incremental=True,
-                    events_already_persisted=True,
-                    **build_session_persistence_kwargs(agent),
-                )
-                agent.lifecycle.session_saved(sid)
-                ui_bus.info(f"Session auto-saved: {sid}", kind=UIEventKind.SESSION)
+            runtime.shutdown()
             if output_coordinator is not None:
                 output_coordinator.drain()
             break
@@ -116,69 +76,20 @@ def run_repl(
         if not user_input:
             continue
 
-        # Ctrl+C marks the previous turn as stopped.  Agent.chat() resets that
-        # state for normal prompts, but local slash commands bypass chat and may
-        # issue their own LLM request (for example, /compact force summarize).
-        agent.clear_stop_request()
-        result = handle_command(
-            user_input,
-            agent,
-            config,
-            current_session_id,
-            ui_bus,
-            ui_profile,
-            action_registry,
-            sessions_dir,
-            skills_service,
-        )
-        if output_coordinator is not None:
-            output_coordinator.drain()
-        prev_session_id = current_session_id
-        current_session_id = result["session_id"]
-        agent.current_session_id = current_session_id
-
-        resumed_exit_time = result.get("session_exit_time")
-        if resumed_exit_time is not None:
-            current_time = time.strftime("%Y-%m-%d %H:%M:%S %Z")
-            pending_resume_prefix = (
-                f"[SESSION_RESUME] User returned to the session at {current_time} "
-                f"(last left at {resumed_exit_time}).\n\n"
-            )
-        elif result["action"] == "continue" and current_session_id != prev_session_id:
-            # Session switched/reset (e.g. /new, /session): stale resume marker should not leak.
-            pending_resume_prefix = None
-
-        if result["action"] == "exit":
-            break
-        if result["action"] == "continue":
-            continue
-
-        chat_input = user_input
-        if pending_resume_prefix is not None:
-            chat_input = pending_resume_prefix + chat_input
-            pending_resume_prefix = None
-
+        exited = []
+        runtime.on_completed = lambda result: exited.append(result.control == "exit")
         try:
-            agent.chat(chat_input)
+            runtime.submit(user_input)
+            runtime.wait_idle(
+                pump=output_coordinator.drain if output_coordinator else lambda: None
+            )
             if output_coordinator is not None:
                 output_coordinator.drain()
+            if any(exited):
+                break
         except KeyboardInterrupt:
-            agent.request_stop()
+            runtime.interrupt()
+            runtime.wait_idle(
+                pump=output_coordinator.drain if output_coordinator else lambda: None
+            )
             ui_bus.warning("Interrupted.")
-        except Exception as e:
-            diagnostic_path = getattr(e, "llm_diagnostic_path", None)
-            if diagnostic_path and current_session_id:
-                SessionStore(sessions_dir).append_system_message(
-                    current_session_id,
-                    config.model,
-                    f"[LLM_ERROR_DIAGNOSTIC] path={diagnostic_path} error={type(e).__name__}: {e}",
-                    active_mode=getattr(agent, "active_mode", None),
-                )
-            if diagnostic_path:
-                ui_bus.error(
-                    f"Error: {e}\nDiagnostic saved to: {diagnostic_path}",
-                    kind=UIEventKind.SYSTEM,
-                    diagnostic_path=diagnostic_path,
-                )
-            else:
-                ui_bus.error(f"Error: {e}")

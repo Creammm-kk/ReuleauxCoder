@@ -25,7 +25,6 @@ class ParsedAction:
 
     command: object
     action: ActionSpec
-    registry: "ActionRegistry"
 
     @property
     def request(self) -> ActionRequest:
@@ -62,7 +61,7 @@ class ActionRegistry:
             raise ValueError(f"Unavailable action: {request.action_id}")
         if not isinstance(request.command, action.command_type):
             raise TypeError(f"Invalid parameters for action: {request.action_id}")
-        return ParsedAction(request.command, action, self)
+        return ParsedAction(request.command, action)
 
     def register_many(self, actions: list[ActionSpec] | tuple[ActionSpec, ...]) -> None:
         """Register multiple action specs."""
@@ -82,10 +81,9 @@ class ActionRegistry:
         user_input: str,
         *,
         ui_profile: UIProfile,
-        current_session_id: str | None = None,
     ) -> ParsedAction | None:
         """Try to parse user input using available action parsers."""
-        parse_ctx = CommandParseContext(current_session_id=current_session_id, ui_profile=ui_profile)
+        parse_ctx = CommandParseContext(ui_profile=ui_profile)
         for action in self.iter_actions(ui_profile):
             if action.parser is None:
                 continue
@@ -93,7 +91,7 @@ class ActionRegistry:
                 continue
             parsed = action.parser(user_input, parse_ctx)
             if parsed is not None:
-                return ParsedAction(command=parsed, action=action, registry=self)
+                return ParsedAction(command=parsed, action=action)
         return None
 
     def dispatch(self, parsed: ParsedAction, ctx: CommandContext) -> CommandEffect:

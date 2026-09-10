@@ -1,14 +1,17 @@
+from reuleauxcoder.app.rpc.models import RuntimeSnapshot
+from reuleauxcoder.app.commands.loader import create_builtin_action_registry
+
 # pyright: reportAttributeAccessIssue=false, reportArgumentType=false, reportAssignmentType=false, reportOptionalMemberAccess=false
 # Duck-typed stubs (SimpleNamespace, object.__new__) are intentional here.
 import threading
 import time
-from collections import deque
 from types import SimpleNamespace
 from dataclasses import replace
 from prompt_toolkit.utils import get_cwidth
 
 from reuleauxcoder.domain.agent.events import AgentEvent
-from reuleauxcoder.app.commands.specs import DuringTurnPolicy
+from reuleauxcoder.app.commands.service import CommandService
+from reuleauxcoder.app.commands.capabilities import UIProfile, UICapability
 from reuleauxcoder.domain.approval import ApprovalSection, ApprovalSectionKind
 from reuleauxcoder.domain.approval import ApprovalQueueStatus
 from reuleauxcoder.domain.runtime.events import (
@@ -71,14 +74,33 @@ from reuleauxcoder.app.interaction_contracts import (
 )
 
 
+_PROFILE = UIProfile("tui", "TUI", frozenset(UICapability))
+
+
+def _request(text):
+    return create_builtin_action_registry().parse(text, ui_profile=_PROFILE).request
+
+
+def _service(agent=None, bus=None, config=None):
+    return CommandService(
+        agent or SimpleNamespace(current_session_id="s1"),
+        config or SimpleNamespace(),
+        bus or UIEventBus(),
+        _PROFILE,
+        create_builtin_action_registry(),
+        panels=create_builtin_command_panel_registry(),
+    )
+
+
 def _bare_app() -> MiniTUIApplication:
     app = object.__new__(MiniTUIApplication)
+    app.runtime = SimpleNamespace(
+        state=RuntimeSnapshot(), build_panel=_service().build_panel
+    )
     app.selection_host = SelectionHost(
-        registry=create_builtin_command_panel_registry(),
-        input_text=lambda: getattr(
-            getattr(app, "input_buffer", None), "text", ""
-        ),
-        submit_command=lambda command: app._submit_panel_command(command),
+        build_panel=app.runtime.build_panel,
+        input_text=lambda: getattr(getattr(app, "input_buffer", None), "text", ""),
+        submit_action=lambda action: app._submit_panel_action(action),
         invalidate=lambda: getattr(app, "invalidate", lambda: None)(),
     )
     return app
@@ -241,13 +263,7 @@ def test_ctrl_c_promotes_queued_steering_before_stopping_turn() -> None:
     app.running = True
     app.cancelling = False
     app.round_interrupt_applying = False
-    app.agent = SimpleNamespace(
-        stop_requested=lambda: False,
-        request_interrupt_intent=lambda: SimpleNamespace(
-            outcome=SimpleNamespace(value="promoted"),
-            discarded_count=0,
-        ),
-    )
+    app.runtime.interrupt = lambda: {"outcome": "promoted", "discarded_count": 0}
     app.ui_bus = SimpleNamespace(warning=warnings.append)
     binding = next(
         binding
@@ -281,10 +297,10 @@ def test_second_ctrl_c_after_promotion_cancels_turn_and_reports_discard() -> Non
     app.running = True
     app.cancelling = False
     app.round_interrupt_applying = False
-    app.agent = SimpleNamespace(
-        stop_requested=lambda: False,
-        request_interrupt_intent=lambda: next(outcomes),
-    )
+    app.runtime.interrupt = lambda: {
+        "outcome": (result := next(outcomes)).outcome.value,
+        "discarded_count": result.discarded_count,
+    }
     app._queued_steering = lambda: ("queued direction",)
     app._queued_commands = lambda: ()
     app.ui_bus = SimpleNamespace(warning=warnings.append)
@@ -309,7 +325,7 @@ def test_rejected_active_turn_steering_preserves_input_buffer() -> None:
     app.running = True
     app.exit_confirm = False
     app.session_header_expanded = True
-    app.agent = SimpleNamespace(submit_user_steering=lambda _text: False)
+    app.runtime.submit = lambda text: SimpleNamespace(status="rejected")
     app.invalidate = lambda: None
     resets = []
     buffer = SimpleNamespace(
@@ -379,8 +395,8 @@ def test_interaction_lane_shows_queued_steering_while_running() -> None:
     app.exit_confirm = False
     app.cancelling = False
     app.running = True
-    app.agent = SimpleNamespace(
-        pending_user_steering=lambda: ("do this instead", "and also that"),
+    app.runtime.state = replace(
+        app.runtime.state, queued_steering=("do this instead", "and also that")
     )
 
     rendered = "".join(text for _style, text in app._interaction_text())
@@ -390,97 +406,13 @@ def test_interaction_lane_shows_queued_steering_while_running() -> None:
     assert app._interaction_height() == 3
 
 
-def test_active_turn_plain_text_is_queued_as_model_steering() -> None:
-    queued = []
-    app = _bare_app()
-    app.agent = SimpleNamespace(submit_user_steering=queued.append)
-
-    app._submit_during_turn("change direction")
-
-    assert queued == ["change direction"]
-
-
-def test_active_turn_immediate_slash_command_executes_locally(monkeypatch) -> None:
-    commands = []
-    steering = []
-    appended = []
-    app = _bare_app()
-    app.agent = SimpleNamespace(submit_user_steering=steering.append)
-    app.events = SimpleNamespace(append_user_command=appended.append)
-    app.ui_bus = SimpleNamespace(warning=lambda *args, **kwargs: None)
-    app.ui_profile = object()
-    app.action_registry = object()
-    app.current_session_id = "s1"
-    app._handle_concurrent_command = commands.append
-
-    monkeypatch.setattr(
-        mini_tui_module,
-        "parse_command",
-        lambda *args, **kwargs: SimpleNamespace(
-            action=SimpleNamespace(during_turn=DuringTurnPolicy.IMMEDIATE)
-        ),
-    )
-
-    class ImmediateThread:
-        def __init__(self, *, target, args, **kwargs):
-            self.target = target
-            self.args = args
-
-        def start(self):
-            self.target(*self.args)
-
-    monkeypatch.setattr(mini_tui_module.threading, "Thread", ImmediateThread)
-
-    app._submit_during_turn("/tokens")
-
-    assert appended == ["/tokens"]
-    assert commands == ["/tokens"]
-    assert steering == []
-
-
-def test_active_turn_idle_only_slash_command_is_queued_locally(monkeypatch) -> None:
-    notices = []
-    steering = []
-    appended = []
-    app = _bare_app()
-    app.agent = SimpleNamespace(submit_user_steering=steering.append)
-    app.events = SimpleNamespace(append_user_command=appended.append)
-    app.ui_bus = SimpleNamespace(
-        info=lambda message, **kwargs: notices.append(message)
-    )
-    app.ui_profile = object()
-    app.action_registry = object()
-    app.current_session_id = "s1"
-    app._deferred_commands = deque()
-    app._deferred_commands_lock = threading.Lock()
-
-    monkeypatch.setattr(
-        mini_tui_module,
-        "parse_command",
-        lambda *args, **kwargs: SimpleNamespace(
-            action=SimpleNamespace(
-                during_turn=DuringTurnPolicy.DEFER_UNTIL_IDLE
-            )
-        ),
-    )
-
-    app._submit_during_turn("/reset")
-
-    assert appended == ["/reset"]
-    assert steering == []
-    assert tuple(app._deferred_commands) == ("/reset",)
-    assert notices and "Ctrl+C to interrupt and apply it sooner" in notices[0]
-
-
 def test_queued_command_preview_explains_default_and_accelerated_timing() -> None:
     app = _bare_app()
     app.interactor = SimpleNamespace(active_request=None)
     app.exit_confirm = False
     app.cancelling = False
     app.running = True
-    app.agent = SimpleNamespace(pending_user_steering=lambda: ())
-    app._deferred_commands = deque(["/model fast"])
-    app._deferred_commands_lock = threading.Lock()
+    app.runtime.state = replace(app.runtime.state, queued_commands=("/model fast",))
 
     rendered = "".join(text for _style, text in app._interaction_text())
 
@@ -489,172 +421,69 @@ def test_queued_command_preview_explains_default_and_accelerated_timing() -> Non
     assert app._interaction_height() == 2
 
 
-def test_next_deferred_command_starts_after_worker_becomes_idle(monkeypatch) -> None:
-    applied = []
-    cleared = []
-    notices = []
-    app = _bare_app()
-    app._closed = False
-    app._deferred_commands = deque(["/model fast"])
-    app._deferred_commands_lock = threading.Lock()
-    app.agent = SimpleNamespace(clear_stop_request=lambda: cleared.append(True))
-    app.ui_bus = SimpleNamespace(info=lambda message, **kwargs: notices.append(message))
-    app._handle_input = lambda *args: applied.append(args)
-
-    class ImmediateThread:
-        def __init__(self, *, target, args, **kwargs):
-            self.target = target
-            self.args = args
-
-        def start(self):
-            self.target(*self.args)
-
-    monkeypatch.setattr(mini_tui_module.threading, "Thread", ImmediateThread)
-
-    assert app._start_next_deferred_command() is True
-
-    assert applied == [("/model fast", False)]
-    assert cleared == [True]
-    assert notices == ["Applying queued command now: /model fast"]
-    assert app.running is True
-    assert tuple(app._deferred_commands) == ()
-
-
-def test_new_idle_input_clears_previous_stop_before_starting_worker(
-    monkeypatch,
-) -> None:
-    operations = []
-    buffer = SimpleNamespace(text="/compact force summarize", reset=lambda: None)
+def test_input_is_submitted_to_runtime_without_frontend_worker():
+    submitted = []
     app = _bare_app()
     app._popup_candidates = lambda: ()
     app.interactor = SimpleNamespace(active_request=None)
-    app.running = False
-    app.exit_confirm = True
-    app.session_header_expanded = True
-    app.agent = SimpleNamespace(
-        clear_stop_request=lambda: operations.append("clear")
-    )
+    app.runtime.submit = lambda text: (
+        submitted.append(text),
+        SimpleNamespace(status="running"),
+    )[1]
     app.invalidate = lambda: None
-
-    class ImmediateThread:
-        def __init__(self, *, target, args, **kwargs):
-            self.target = target
-            self.args = args
-
-        def start(self):
-            operations.append("start")
-
-    monkeypatch.setattr(mini_tui_module.threading, "Thread", ImmediateThread)
-
-    assert app._accept_buffer(buffer) is True
-
-    assert operations == ["clear", "start"]
-    assert app.running is True
-    assert app.cancelling is False
+    resets = []
+    buffer = SimpleNamespace(
+        text="/compact force summarize", reset=lambda: resets.append(True)
+    )
+    assert app._accept_buffer(buffer)
+    assert submitted == ["/compact force summarize"]
+    assert resets == [True]
 
 
-def test_completed_agent_turn_starts_deferred_command_before_marking_idle(
-    monkeypatch,
-) -> None:
-    started = []
-    chats = []
-    notices = []
+def test_completion_uses_backend_transition_data():
+    from reuleauxcoder.app.commands.requests import CommandResult
+
+    calls = []
     app = _bare_app()
-    app.agent = SimpleNamespace(
-        session_generation=1,
-        current_session_id="s1",
-        chat=chats.append,
+    app.events = SimpleNamespace(
+        clear_transcript=lambda: calls.append("clear"),
+        restore_control_state=lambda *args, **kwargs: calls.append("restore"),
     )
-    app.config = SimpleNamespace()
-    app.current_session_id = "s1"
-    app.session_exit_time = None
-    app.ui_bus = SimpleNamespace(
-        info=lambda message, **kwargs: notices.append((message, kwargs))
-    )
-    app.ui_profile = object()
-    app.action_registry = object()
-    app.sessions_dir = None
-    app.skills_service = None
-    app.cancelling = True
-    app.running = True
+    app.transcript_pane = SimpleNamespace(vertical_scroll=20)
     app.invalidate = lambda: None
-    app._start_next_deferred_command = lambda: started.append(True) or True
-
-    monkeypatch.setattr(
-        mini_tui_module,
-        "handle_command",
-        lambda *args, **kwargs: {
-            "action": "chat",
-            "action_id": None,
-            "session_id": "s1",
-            "session_exit_time": None,
-        },
+    app._on_completed(
+        CommandResult(
+            session_id="new", session_changed=True, clear_transcript=True, plan=object()
+        )
     )
-
-    app._handle_input("finish this")
-
-    assert chats == ["finish this"]
-    assert started == [True]
-    assert notices == [("Current turn cancelled.", {"kind": UIEventKind.AGENT})]
-    assert app.cancelling is False
-    assert app.running is True
+    assert calls == ["restore", "clear"]
+    assert app.transcript_pane.vertical_scroll == 0
 
 
-def test_exit_finalizer_skips_duplicate_save_after_exit_command() -> None:
-    prepared = []
-    queue_closed = []
+def test_exit_finalizer_delegates_shutdown_and_reports_backend_snapshot():
+    calls = []
     app = _bare_app()
-    app._exit_session_saved = True
-    app.agent = SimpleNamespace(messages=[{"role": "user", "content": "done"}])
-    app.config = SimpleNamespace(session_auto_save=True)
-    app.events = SimpleNamespace(close=lambda: queue_closed.append(True))
-    app._prepare_forced_exit = prepared.append
-
+    app.interactor = SimpleNamespace(
+        cancel_active=lambda reason: calls.append("cancel")
+    )
+    app.runtime.shutdown = lambda: calls.append("shutdown")
+    app.runtime.state = replace(app.runtime.state, exit_saved_session_id="saved")
+    app.events = SimpleNamespace(close=lambda: calls.append("close"))
     app._save_exit_session()
+    assert calls == ["cancel", "shutdown", "close"]
+    assert app.saved_session_id == "saved"
 
-    assert prepared == ["CLI session closed"]
-    assert queue_closed == [True]
 
-
-def test_exit_finalizer_records_saved_session_for_terminal_report(monkeypatch) -> None:
-    saved_lifecycle = []
+def test_panel_submission_preserves_chat_draft():
+    submitted = []
     app = _bare_app()
-    app._exit_session_saved = False
-    app._saved_session_id = None
-    app.agent = SimpleNamespace(
-        messages=[{"role": "user", "content": "done"}],
-        state=SimpleNamespace(total_prompt_tokens=1, total_completion_tokens=2),
-        active_mode="coder",
-        lifecycle=SimpleNamespace(session_saved=saved_lifecycle.append),
-    )
-    app.config = SimpleNamespace(
-        session_auto_save=True,
-        model="model",
-    )
-    app.current_session_id = "session"
-    app.sessions_dir = None
-    app._prepare_forced_exit = lambda _reason: None
-
-    class FakeSessionStore:
-        def __init__(self, _sessions_dir) -> None:
-            pass
-
-        def save(self, *args, **kwargs) -> str:
-            return "session"
-
-    monkeypatch.setattr(mini_tui_module, "SessionStore", FakeSessionStore)
-    monkeypatch.setattr(
-        mini_tui_module, "build_session_runtime_state", lambda *_args: None
-    )
-    monkeypatch.setattr(
-        mini_tui_module, "build_session_persistence_kwargs", lambda *_args: {}
-    )
-
-    app._save_exit_session()
-
-    assert app.exit_session_saved is True
-    assert app.saved_session_id == "session"
-    assert saved_lifecycle == ["session"]
+    app.runtime.submit = submitted.append
+    app.input_buffer = SimpleNamespace(text="unfinished draft", cursor_position=5)
+    request = _request("/thinking effort high")
+    app._submit_panel_action(request)
+    assert submitted == [request]
+    assert app.input_buffer.text == "unfinished draft"
+    assert app.input_buffer.cursor_position == 5
 
 
 def test_wrapped_row_count_grows_input_height_with_cjk_awareness() -> None:
@@ -703,9 +532,7 @@ def test_command_popup_dismissed_until_text_changes() -> None:
     app.interactor = SimpleNamespace(active_request=None)
     app.selection_host.selection = None
     app.input_buffer = SimpleNamespace(text="/he", cursor_position=3)
-    app._popup_entries = (
-        PopupEntry("/help", "Show command help", False, False),
-    )
+    app._popup_entries = (PopupEntry("/help", "Show command help", False, False),)
     app._popup_index = 0
     app._popup_last_text = ""
     app._popup_dismissed = False
@@ -720,7 +547,7 @@ def test_command_popup_dismissed_until_text_changes() -> None:
     assert app._popup_candidates()
 
 
-def test_mode_view_opens_selection_panel_and_confirm_resubmits() -> None:
+def test_mode_view_opens_selection_panel_and_submits_action() -> None:
     from types import SimpleNamespace as NS
 
     from reuleauxcoder.app.commands.view_models import (
@@ -733,7 +560,7 @@ def test_mode_view_opens_selection_panel_and_confirm_resubmits() -> None:
     app.invalidate = lambda: None
     accepted = []
     app.input_buffer = NS(text="", cursor_position=0)
-    app._accept_buffer = lambda buffer: accepted.append(buffer.text)
+    app._submit_panel_action = accepted.append
 
     payload = NS(
         view_type="mode_profiles",
@@ -774,7 +601,7 @@ def test_mode_view_opens_selection_panel_and_confirm_resubmits() -> None:
     assert app.selection_host.selection.selected.label == "coder"
     app.selection_host.move(1)
     app.selection_host.confirm()
-    assert accepted == ["/mode switch plan"]
+    assert accepted == [_request("/mode switch plan")]
     assert app.selection_host.selection is None
 
 
@@ -786,7 +613,11 @@ def test_unknown_view_type_is_not_claimed() -> None:
     app.invalidate = lambda: None
 
     payload = NS(
-        view_type="token_usage", title="Tokens", action="open", focus=True, view_model=NS()
+        view_type="token_usage",
+        title="Tokens",
+        action="open",
+        focus=True,
+        view_model=NS(),
     )
     assert app.selection_host.open_view(payload) is False
     assert app.selection_host.selection is None
@@ -850,7 +681,7 @@ def test_model_view_opens_slot_panel_then_profile_panel() -> None:
     app.invalidate = lambda: None
     accepted = []
     app.input_buffer = SimpleNamespace(text="", cursor_position=0)
-    app._accept_buffer = lambda buffer: accepted.append(buffer.text)
+    app._submit_panel_action = accepted.append
 
     assert app.selection_host.open_view(_model_view_payload()) is True
     assert app.selection_host.selection.definition.view_type == "model_slots"
@@ -860,11 +691,13 @@ def test_model_view_opens_slot_panel_then_profile_panel() -> None:
     app.selection_host.confirm()
     assert app.selection_host.selection.definition.view_type == "model_profiles"
     assert len(app.selection_host.stack) == 1
-    assert app.selection_host.selection.selected.label == "sonnet"  # current main preselected
+    assert (
+        app.selection_host.selection.selected.label == "sonnet"
+    )  # current main preselected
 
-    # Confirm a profile resubmits the canonical command.
+    # Confirm a profile submits its typed action.
     app.selection_host.confirm()
-    assert accepted == ["/model use-main sonnet"]
+    assert accepted == [_request("/model use-main sonnet")]
     assert app.selection_host.selection is None
     assert app.selection_host.stack == []
 
@@ -880,7 +713,9 @@ def test_model_panel_escape_returns_to_slot_panel() -> None:
     app.selection_host.move(1)  # Session · Sub-agent model
     app.selection_host.confirm()
     assert app.selection_host.selection.definition.view_type == "model_profiles"
-    assert app.selection_host.selection.selected.label == "haiku"  # current sub preselected
+    assert (
+        app.selection_host.selection.selected.label == "haiku"
+    )  # current sub preselected
 
     app.selection_host.close()  # back to slots
     assert app.selection_host.selection.definition.view_type == "model_slots"
@@ -891,7 +726,7 @@ def test_model_panel_escape_returns_to_slot_panel() -> None:
 def _approval_view_payload() -> object:
     from types import SimpleNamespace as NS
 
-    from reuleauxcoder.app.runtime.approval import ApprovalRuleView, ApprovalView
+    from reuleauxcoder.app.commands.approval_views import ApprovalRuleView, ApprovalView
 
     return NS(
         view_type="approval_rules",
@@ -927,7 +762,7 @@ def test_approval_view_opens_targets_then_actions() -> None:
     app.invalidate = lambda: None
     accepted = []
     app.input_buffer = SimpleNamespace(text="", cursor_position=0)
-    app._accept_buffer = lambda buffer: accepted.append(buffer.text)
+    app._submit_panel_action = accepted.append
 
     assert app.selection_host.open_view(_approval_view_payload()) is True
     assert app.selection_host.selection.definition.view_type == "approval_rules"
@@ -944,7 +779,7 @@ def test_approval_view_opens_targets_then_actions() -> None:
 
     app.selection_host.move(1)  # deny
     app.selection_host.confirm()
-    assert accepted == ["/approval set tool=write_file deny"]
+    assert accepted == [_request("/approval set tool=write_file deny")]
     assert app.selection_host.selection is None
 
 
@@ -956,7 +791,7 @@ def test_approval_global_target_uses_set_global() -> None:
     app.invalidate = lambda: None
     accepted = []
     app.input_buffer = SimpleNamespace(text="", cursor_position=0)
-    app._accept_buffer = lambda buffer: accepted.append(buffer.text)
+    app._submit_panel_action = accepted.append
 
     app.selection_host.open_view(_approval_view_payload())
     app.selection_host.move(1)  # mcp:github (global source)
@@ -968,14 +803,14 @@ def test_approval_global_target_uses_set_global() -> None:
 
     app.selection_host.confirm()
     assert accepted == [
-        "/approval set-workspace source=mcp,mcp_server=github allow"
+        _request("/approval set-workspace source=mcp,mcp_server=github allow")
     ]
 
 
 def test_approval_panel_can_remove_exact_scoped_shell_grant() -> None:
     from types import SimpleNamespace as NS
 
-    from reuleauxcoder.app.runtime.approval import ApprovalRuleView, ApprovalView
+    from reuleauxcoder.app.commands.approval_views import ApprovalRuleView, ApprovalView
 
     signature = '{"command":"echo hello","cwd":"C:/work tree"}'
     payload = NS(
@@ -1004,7 +839,7 @@ def test_approval_panel_can_remove_exact_scoped_shell_grant() -> None:
     app.invalidate = lambda: None
     accepted = []
     app.input_buffer = SimpleNamespace(text="", cursor_position=0)
-    app._accept_buffer = lambda buffer: accepted.append(buffer.text)
+    app._submit_panel_action = accepted.append
 
     assert app.selection_host.open_view(payload) is True
     assert signature in app.selection_host.selection.selected.label
@@ -1015,15 +850,17 @@ def test_approval_panel_can_remove_exact_scoped_shell_grant() -> None:
     app.selection_host.confirm()
 
     assert accepted == [
-        "/approval unset source=builtin,tool=shell "
-        """'{"command":"echo hello","cwd":"C:/work tree"}'"""
+        _request(
+            "/approval unset source=builtin,tool=shell "
+            """'{"command":"echo hello","cwd":"C:/work tree"}'"""
+        )
     ]
 
 
 def test_approval_panel_marks_cross_tool_scope_as_broad() -> None:
     from types import SimpleNamespace as NS
 
-    from reuleauxcoder.app.runtime.approval import ApprovalRuleView, ApprovalView
+    from reuleauxcoder.app.commands.approval_views import ApprovalRuleView, ApprovalView
 
     payload = NS(
         view_type="approval_rules",
@@ -1067,9 +904,7 @@ def _mcp_view_payload(*, action: str = "open", focus: bool = True) -> object:
         focus=focus,
         view_model=MCPServersView(
             servers=[
-                MCPServerStatus(
-                    name="github", enabled=True, runtime_connected=True
-                ),
+                MCPServerStatus(name="github", enabled=True, runtime_connected=True),
                 MCPServerStatus(
                     name="filesystem", enabled=False, runtime_connected=False
                 ),
@@ -1085,22 +920,25 @@ def test_mcp_view_opens_toggle_panel_and_confirm_keeps_it_open() -> None:
     app.invalidate = lambda: None
     accepted = []
     app.input_buffer = SimpleNamespace(text="", cursor_position=0)
-    app._accept_buffer = lambda buffer: accepted.append(buffer.text)
+    app._submit_panel_action = accepted.append
 
     assert app.selection_host.open_view(_mcp_view_payload()) is True
     assert app.selection_host.selection.definition.view_type == "mcp_servers"
     assert app.selection_host.selection.selected.label == "github"
-    assert app.selection_host.selection.selected.command == "/mcp disable github"
+    assert app.selection_host.selection.selected.action == _request(
+        "/mcp disable github"
+    )
 
     # Toggling submits the command but keeps the panel open.
     app.selection_host.confirm()
-    assert accepted == ["/mcp disable github"]
+    assert accepted == [_request("/mcp disable github")]
     assert app.selection_host.selection is not None
 
     # A refresh updates items in place (github now disabled).
-    assert app.selection_host.open_view(
-        _mcp_view_payload(action="refresh", focus=False)
-    ) is True
+    assert (
+        app.selection_host.open_view(_mcp_view_payload(action="refresh", focus=False))
+        is True
+    )
     from reuleauxcoder.interfaces.tui.selection_panel import SelectionPanel
 
     selection: SelectionPanel | None = app.selection_host.selection
@@ -1172,20 +1010,24 @@ def test_skills_view_opens_toggle_panel_and_confirm_keeps_it_open() -> None:
     app.invalidate = lambda: None
     accepted = []
     app.input_buffer = SimpleNamespace(text="", cursor_position=0)
-    app._accept_buffer = lambda buffer: accepted.append(buffer.text)
+    app._submit_panel_action = accepted.append
 
     assert app.selection_host.open_view(_skills_view_payload()) is True
     assert app.selection_host.selection.definition.view_type == "skills"
     assert app.selection_host.selection.selected.label == "commit-helper"
-    assert app.selection_host.selection.selected.command == "/skills disable commit-helper"
+    assert app.selection_host.selection.selected.action == _request(
+        "/skills disable commit-helper"
+    )
 
     app.selection_host.confirm()
-    assert accepted == ["/skills disable commit-helper"]
+    assert accepted == [_request("/skills disable commit-helper")]
     assert app.selection_host.selection is not None  # toggle panels stay open
 
     # Disabled skill toggles back with the enable command.
     app.selection_host.move(1)
-    assert app.selection_host.selection.selected.command == "/skills enable deep-review"
+    assert app.selection_host.selection.selected.action == _request(
+        "/skills enable deep-review"
+    )
 
 
 def test_skills_refresh_updates_items_in_place() -> None:
@@ -1196,7 +1038,9 @@ def test_skills_refresh_updates_items_in_place() -> None:
 
     app.selection_host.open_view(_skills_view_payload())
     assert (
-        app.selection_host.open_view(_skills_view_payload(action="refresh", focus=False))
+        app.selection_host.open_view(
+            _skills_view_payload(action="refresh", focus=False)
+        )
         is True
     )
     assert app.selection_host.selection is not None
@@ -1221,7 +1065,7 @@ def test_mcp_panel_shows_hint_row_when_no_servers() -> None:
     app.invalidate = lambda: None
     accepted = []
     app.input_buffer = SimpleNamespace(text="", cursor_position=0)
-    app._accept_buffer = lambda buffer: accepted.append(buffer.text)
+    app._submit_panel_action = accepted.append
 
     assert app.selection_host.open_view(payload) is True
     assert app.selection_host.selection.selected.label == "(no MCP servers configured)"
@@ -1260,7 +1104,7 @@ def test_thinking_effort_view_opens_selection_panel() -> None:
     app.invalidate = lambda: None
     accepted = []
     app.input_buffer = SimpleNamespace(text="", cursor_position=0)
-    app._accept_buffer = lambda buffer: accepted.append(buffer.text)
+    app._submit_panel_action = accepted.append
 
     assert app.selection_host.open_view(payload) is True
     assert app.selection_host.selection.definition.view_type == "thinking_effort"
@@ -1268,7 +1112,7 @@ def test_thinking_effort_view_opens_selection_panel() -> None:
 
     app.selection_host.move(1)
     app.selection_host.confirm()
-    assert accepted == ["/thinking effort medium"]
+    assert accepted == [_request("/thinking effort medium")]
     assert app.selection_host.selection is None
 
 
@@ -1310,22 +1154,24 @@ def _sessions_view_payload() -> object:
     )
 
 
-def test_sessions_view_opens_picker_and_confirm_resubmits_restore() -> None:
+def test_sessions_view_opens_picker_and_submits_restore_action() -> None:
     app = _bare_app()
     app.selection_host.selection = None
     app.selection_host.stack = []
     app.invalidate = lambda: None
     accepted = []
     app.input_buffer = SimpleNamespace(text="", cursor_position=0)
-    app._accept_buffer = lambda buffer: accepted.append(buffer.text)
+    app._submit_panel_action = accepted.append
 
     assert app.selection_host.open_view(_sessions_view_payload()) is True
     assert app.selection_host.selection.definition.view_type == "sessions"
-    assert app.selection_host.selection.selected.label.startswith("#1")  # active preselected
+    assert app.selection_host.selection.selected.label.startswith(
+        "#1"
+    )  # active preselected
 
     app.selection_host.move(1)
     app.selection_host.confirm()
-    assert accepted == ["/session sess-bbb"]
+    assert accepted == [_request("/session sess-bbb")]
     assert app.selection_host.selection is None
 
 
@@ -1345,7 +1191,7 @@ def test_sessions_picker_filters_by_buffer_text_and_keeps_input_visible() -> Non
 
     app.input_buffer.text = "rtk"
     visible = app.selection_host.visible_items()
-    assert [item.command for item in visible] == ["/session sess-bbb"]
+    assert [item.action for item in visible] == [_request("/session sess-bbb")]
 
     app.input_buffer.text = "zzz-no-match"
     assert app.selection_host.visible_items() == ()
@@ -1417,7 +1263,7 @@ def _jobs_browser_app() -> MiniTUIApplication:
 def test_agents_view_opens_browser_and_job_actions_sub_panel() -> None:
     app = _jobs_browser_app()
     accepted = []
-    app._accept_buffer = lambda buffer: accepted.append(buffer.text)
+    app._submit_panel_action = accepted.append
 
     assert app.selection_host.open_view(_jobs_view_payload()) is True
     assert app.selection_host.selection.definition.view_type == "subagent_jobs"
@@ -1426,12 +1272,15 @@ def test_agents_view_opens_browser_and_job_actions_sub_panel() -> None:
     # Enter on a running job → actions sub panel with cancel.
     app.selection_host.confirm()
     assert app.selection_host.selection.definition.view_type == "agent_job_actions"
-    assert [item.label for item in app.selection_host.selection.definition.items] == ["get details", "cancel"]
+    assert [item.label for item in app.selection_host.selection.definition.items] == [
+        "get details",
+        "cancel",
+    ]
 
-    # Cancel resubmits the canonical command and pops back to the browser.
+    # Cancel submits its action and pops back to the browser.
     app.selection_host.move(1)
     app.selection_host.confirm()
-    assert accepted == ["/agents cancel job-01"]
+    assert accepted == [_request("/agents cancel job-01")]
     assert app.selection_host.selection.definition.view_type == "subagent_jobs"
 
 
@@ -1440,7 +1289,10 @@ def test_agents_browser_terminal_job_offers_cleanup() -> None:
     app.selection_host.open_view(_jobs_view_payload())
     app.selection_host.move(1)  # job-02 (completed)
     app.selection_host.confirm()
-    assert [item.label for item in app.selection_host.selection.definition.items] == ["get details", "cleanup"]
+    assert [item.label for item in app.selection_host.selection.definition.items] == [
+        "get details",
+        "cleanup",
+    ]
 
 
 def test_agents_browser_filters_by_task() -> None:
@@ -1486,7 +1338,7 @@ def test_skills_panel_shows_hint_row_when_no_skills() -> None:
 def test_approval_panel_includes_dynamic_targets_without_rules() -> None:
     from types import SimpleNamespace as NS
 
-    from reuleauxcoder.app.runtime.approval import (
+    from reuleauxcoder.app.commands.approval_views import (
         ApprovalEffectivePolicyView,
         ApprovalToolPolicyView,
         ApprovalView,
@@ -1531,7 +1383,7 @@ def test_approval_panel_includes_dynamic_targets_without_rules() -> None:
     app.invalidate = lambda: None
     accepted = []
     app.input_buffer = SimpleNamespace(text="", cursor_position=0)
-    app._accept_buffer = lambda buffer: accepted.append(buffer.text)
+    app._submit_panel_action = accepted.append
 
     assert app.selection_host.open_view(payload) is True
     labels = [item.label for item in app.selection_host.selection.definition.items]
@@ -1547,7 +1399,7 @@ def test_approval_panel_includes_dynamic_targets_without_rules() -> None:
     assert app.selection_host.selection.selected.label == "Ask every time"
     app.selection_host.confirm()
     assert accepted == [
-        "/approval set source=mcp,mcp_server=time require_approval"
+        _request("/approval set source=mcp,mcp_server=time require_approval")
     ]
 
 
@@ -1705,29 +1557,18 @@ def test_structured_panel_is_fixed_height_until_details_are_expanded() -> None:
     assert "MODEL" in "".join(text for row in expanded for _style, text in row)
 
 
-def test_mcp_panel_detail_updates_from_connecting_to_ready() -> None:
+def test_mcp_panel_detail_updates_from_runtime_snapshots():
     app = _bare_app()
-    app.config = SimpleNamespace(
-        mcp_servers=[
-            SimpleNamespace(enabled=True),
-            SimpleNamespace(enabled=True),
-            SimpleNamespace(enabled=False),
-        ]
+    app.runtime.state = replace(
+        app.runtime.state, mcp_state="connecting", mcp_enabled=2, mcp_tools=2
     )
-    manager = SimpleNamespace(initial_state="connecting", available_tool_count=2)
-    app.agent = SimpleNamespace(mcp_manager=manager)
-
     assert app._mcp_panel_detail() == "MCP connecting · 2 enabled · 2 tools"
-
-    manager.initial_state = "ready"
-    manager.available_tool_count = 7
+    app.runtime.state = replace(app.runtime.state, mcp_state="ready", mcp_tools=7)
     assert app._mcp_panel_detail() == "MCP 2 enabled · 7 tools"
 
 
 def test_mcp_panel_detail_handles_no_configured_servers() -> None:
     app = _bare_app()
-    app.config = SimpleNamespace(mcp_servers=[])
-    app.agent = SimpleNamespace(mcp_manager=None)
 
     assert app._mcp_panel_detail() == "MCP 0 enabled · 0 tools"
 
@@ -1820,9 +1661,7 @@ def test_unchanged_transcript_layout_uses_model_revision_fast_path(
     def unexpected_compose(_cells):
         raise AssertionError("unchanged transcript should not be recomposed")
 
-    monkeypatch.setattr(
-        event_adapter_module, "compose_transcript", unexpected_compose
-    )
+    monkeypatch.setattr(event_adapter_module, "compose_transcript", unexpected_compose)
 
     assert adapter.transcript_layout(80) is first
 
@@ -2150,9 +1989,7 @@ def test_interaction_delivery_keyboard_interrupt_clears_active_slot() -> None:
 
 def test_interaction_invalidator_keyboard_interrupt_clears_active_slot() -> None:
     interactor = _acknowledged_interactor()
-    interactor.bind_invalidator(
-        lambda: (_ for _ in ()).throw(KeyboardInterrupt())
-    )
+    interactor.bind_invalidator(lambda: (_ for _ in ()).throw(KeyboardInterrupt()))
 
     try:
         interactor.review(ReviewRequest("Edit", "diff"))
@@ -2297,9 +2134,7 @@ def test_review_diff_is_projected_into_main_transcript_and_bottom_is_compact() -
 
     assert "PROPOSED EDIT DIFF" in rendered
     assert "+new" in rendered
-    assert controls == [
-        "[Enter/Y] Approve   [N] Reject   [F] Deny with feedback"
-    ]
+    assert controls == ["[Enter/Y] Approve   [N] Reject   [F] Deny with feedback"]
     assert "+new" not in "\n".join(controls)
 
 
@@ -2369,30 +2204,12 @@ def test_before_render_keeps_scrolled_view_stable_and_tail_sticky() -> None:
     assert app._follow_transcript is True
 
 
-def test_terminal_resize_is_forwarded_to_visible_process_sessions() -> None:
+def test_terminal_resize_is_forwarded_to_backend():
     calls = []
-    manager = SimpleNamespace(
-        resize_tty_sessions=lambda **kwargs: calls.append(kwargs)
-    )
     app = _bare_app()
-    app.agent = SimpleNamespace(
-        process_manager=manager,
-        agent_id="agent",
-        session_generation=3,
-    )
-    app.current_session_id = "session"
-
+    app.runtime.resize = lambda *args: calls.append(args)
     app._sync_process_terminal_size(41, 101)
-
-    assert calls == [
-        {
-            "rows": 41,
-            "columns": 101,
-            "agent_id": "agent",
-            "owner_session_id": "session",
-            "session_generation": 3,
-        }
-    ]
+    assert calls == [(41, 101)]
 
 
 def test_before_render_reports_resize_failure_and_finishes_layout() -> None:
@@ -2424,9 +2241,7 @@ def test_before_render_reports_resize_failure_and_finishes_layout() -> None:
 
     app._before_render(None)
 
-    assert failures == [
-        ("terminal_resize", "SystemExit", {"request_repaint": True})
-    ]
+    assert failures == [("terminal_resize", "SystemExit", {"request_repaint": True})]
     assert app._last_terminal_rows == 40
     assert app.transcript_pane.vertical_scroll == 0
 
@@ -2441,17 +2256,13 @@ def test_before_render_reports_output_failure_without_repaint_loop() -> None:
     )
     app.application = SimpleNamespace(
         output=SimpleNamespace(
-            get_size=lambda: (_ for _ in ()).throw(
-                GeneratorExit("terminal-secret")
-            )
+            get_size=lambda: (_ for _ in ()).throw(GeneratorExit("terminal-secret"))
         )
     )
 
     app._before_render(None)
 
-    assert failures == [
-        ("before_render", "GeneratorExit", {"request_repaint": False})
-    ]
+    assert failures == [("before_render", "GeneratorExit", {"request_repaint": False})]
 
 
 def test_virtual_layout_rebases_scroll_to_same_cell_after_markdown_reflow() -> None:

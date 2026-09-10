@@ -15,22 +15,15 @@ from reuleauxcoder.app.commands.panels import (
     PanelRefreshPolicy,
 )
 from reuleauxcoder.app.commands.registry import ActionRegistry
+from reuleauxcoder.app.commands.requests import ActionRequest
 from reuleauxcoder.app.commands.shared import (
     EmptyCommand,
-    TEXT_REQUIRED,
     UI_TARGETS,
     slash_trigger,
 )
 from reuleauxcoder.app.commands.specs import ActionSpec, DuringTurnPolicy
-from reuleauxcoder.app.runtime.approval import (
-    ApprovalRuleView,
-    ApprovalView,
-    VALID_APPROVAL_ACTIONS,
-    build_approval_view,
-    parse_approval_target,
-    refresh_approval_runtime,
-    same_rule_policy_target,
-)
+from reuleauxcoder.app.runtime.approval import VALID_APPROVAL_ACTIONS, build_approval_view, parse_approval_target, refresh_approval_runtime, same_rule_policy_target
+from reuleauxcoder.app.commands.approval_views import ApprovalRuleView, ApprovalView
 from reuleauxcoder.app.runtime.session_state import get_runtime_approval_config
 from reuleauxcoder.infrastructure.persistence.workspace_config_store import (
     WorkspaceConfigStore,
@@ -408,19 +401,31 @@ def _approval_target_label(rule: ApprovalRuleView) -> str:
     return label
 
 
-def _approval_command(
+def _approval_request(
     verb: str,
     selector: str,
     *,
     pattern: str | None = None,
     action: str | None = None,
-) -> str:
-    tokens = ["/approval", verb, selector]
-    if pattern is not None:
-        tokens.append(pattern)
-    if action is not None:
-        tokens.append(action)
-    return shlex.join(tokens)
+) -> ActionRequest:
+    if verb == "set":
+        return ActionRequest(
+            "approval.set", SetApprovalRuleCommand(selector, action, pattern)
+        )
+    if verb == "set-workspace":
+        return ActionRequest(
+            "approval.set_global",
+            SetGlobalApprovalRuleCommand(selector, action, pattern),
+        )
+    if verb == "unset":
+        return ActionRequest(
+            "approval.unset", UnsetApprovalRuleCommand(selector, pattern)
+        )
+    if verb == "unset-workspace":
+        return ActionRequest(
+            "approval.unset_global", UnsetGlobalApprovalRuleCommand(selector, pattern)
+        )
+    raise ValueError(f"Unknown approval action: {verb}")
 
 
 def _common_action(rules: list[ApprovalRuleView]) -> str | None:
@@ -448,11 +453,9 @@ def _approval_action_items(
         PanelItem(
             label=labels[action][0],
             description=(
-                f"⚠ BROAD SCOPE · {labels[action][1]}"
-                if broad
-                else labels[action][1]
+                f"⚠ BROAD SCOPE · {labels[action][1]}" if broad else labels[action][1]
             ),
-            command=_approval_command(
+            action=_approval_request(
                 verb,
                 selector,
                 pattern=pattern,
@@ -467,7 +470,7 @@ def _approval_action_items(
             PanelItem(
                 label="Remove this override",
                 description="Fall back to the next matching policy",
-                command=_approval_command(
+                action=_approval_request(
                     unset_verb,
                     selector,
                     pattern=pattern,
@@ -538,7 +541,9 @@ def _approval_lifetime_panel(
         ),
     )
     inherited = (
-        f"inherits {inherited_action}" if inherited_action is not None else "no override"
+        f"inherits {inherited_action}"
+        if inherited_action is not None
+        else "no override"
     )
     return PanelDefinition(
         view_type="approval_lifetime",
@@ -551,7 +556,7 @@ def _approval_lifetime_panel(
                     session_rules,
                     empty="no override · stored with this conversation session",
                 ),
-                command="",
+                action=None,
                 current=bool(session_rules),
             ),
             PanelItem(
@@ -561,7 +566,7 @@ def _approval_lifetime_panel(
                     workspace_rules,
                     empty=f"{inherited} · saved in .rcoder/config.yaml",
                 ),
-                command="",
+                action=None,
                 current=not session_rules
                 and bool(workspace_rules or persistent_inherited_rules),
             ),
@@ -577,9 +582,7 @@ def _approval_scope_is_broad(selector: str, pattern: str | None) -> bool:
     if pattern == "*" or (pattern is not None and pattern.endswith("/**")):
         return True
     dimensions = {
-        segment.partition("=")[0]
-        for segment in selector.split(",")
-        if "=" in segment
+        segment.partition("=")[0] for segment in selector.split(",") if "=" in segment
     }
     return "effect" in dimensions or "tool" not in dimensions
 
@@ -657,7 +660,7 @@ def command_panel_spec() -> CommandPanelSpec:
                 description = f"effective: {rules[0].action} · no override"
             if broad:
                 description = f"⚠ broad scope · {description}"
-            items.append(PanelItem(label=label, description=description, command=""))
+            items.append(PanelItem(label=label, description=description, action=None))
             children.append(
                 (
                     label,
@@ -693,10 +696,10 @@ def register_actions(registry: ActionRegistry) -> None:
         [
             ActionSpec(
                 action_id="approval.show",
+                command_type=EmptyCommand,
                 feature_id="approval",
                 description="Show effective approval rules for the current session",
                 ui_targets=UI_TARGETS,
-                required_capabilities=TEXT_REQUIRED,
                 triggers=(slash_trigger("/approval show"),),
                 parser=_parse_show_approval,
                 handler=_handle_show_approval,
@@ -704,30 +707,28 @@ def register_actions(registry: ActionRegistry) -> None:
             ),
             ActionSpec(
                 action_id="approval.set",
+                command_type=SetApprovalRuleCommand,
+                audit="runtime_config_changed",
                 feature_id="approval",
                 description="[session] Set a conversation-session approval override",
                 ui_targets=UI_TARGETS,
-                required_capabilities=TEXT_REQUIRED,
-                triggers=(
-                    slash_trigger("/approval set <target> [pattern] <action>"),
-                ),
+                triggers=(slash_trigger("/approval set <target> [pattern] <action>"),),
                 parser=_parse_set_approval,
                 handler=_handle_set_approval_rule,
                 during_turn=DuringTurnPolicy.IMMEDIATE,
             ),
             ActionSpec(
                 action_id="approval.set_global",
+                command_type=SetGlobalApprovalRuleCommand,
+                audit="runtime_config_changed",
                 feature_id="approval",
                 description="[workspace] Set a persistent workspace approval override",
                 ui_targets=UI_TARGETS,
-                required_capabilities=TEXT_REQUIRED,
                 triggers=(
                     slash_trigger(
                         "/approval set-workspace <target> [pattern] <action>"
                     ),
-                    slash_trigger(
-                        "/approval set-global <target> [pattern] <action>"
-                    ),
+                    slash_trigger("/approval set-global <target> [pattern] <action>"),
                 ),
                 parser=_parse_set_global_approval,
                 handler=_handle_set_global_approval_rule,
@@ -735,10 +736,11 @@ def register_actions(registry: ActionRegistry) -> None:
             ),
             ActionSpec(
                 action_id="approval.unset",
+                command_type=UnsetApprovalRuleCommand,
+                audit="runtime_config_changed",
                 feature_id="approval",
                 description="[session] Remove a conversation-session override",
                 ui_targets=UI_TARGETS,
-                required_capabilities=TEXT_REQUIRED,
                 triggers=(slash_trigger("/approval unset <target> [pattern]"),),
                 parser=_parse_unset_approval,
                 handler=_handle_unset_approval_rule,
@@ -746,10 +748,11 @@ def register_actions(registry: ActionRegistry) -> None:
             ),
             ActionSpec(
                 action_id="approval.unset_global",
+                command_type=UnsetGlobalApprovalRuleCommand,
+                audit="runtime_config_changed",
                 feature_id="approval",
                 description="[workspace] Remove a persistent workspace override",
                 ui_targets=UI_TARGETS,
-                required_capabilities=TEXT_REQUIRED,
                 triggers=(
                     slash_trigger("/approval unset-workspace <target> [pattern]"),
                     slash_trigger("/approval unset-global <target> [pattern]"),

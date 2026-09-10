@@ -13,9 +13,9 @@ from reuleauxcoder.app.commands.panels import (
     PanelItem,
 )
 from reuleauxcoder.app.commands.registry import ActionRegistry
+from reuleauxcoder.app.commands.requests import ActionRequest
 from reuleauxcoder.app.commands.shared import (
     EmptyCommand,
-    TEXT_REQUIRED,
     UI_TARGETS,
     non_empty_text,
     slash_trigger,
@@ -188,8 +188,9 @@ def command_panel_spec() -> CommandPanelSpec:
                     f" · {skill.scope}"
                     f"{' · ' + skill.description if skill.description else ''}"
                 ),
-                command=(
-                    f"/skills {'disable' if skill.enabled else 'enable'} {skill.name}"
+                action=ActionRequest(
+                    "skills.disable" if skill.enabled else "skills.enable",
+                    ToggleSkillCommand(skill.name, not skill.enabled),
                 ),
                 current=skill.enabled,
             )
@@ -198,7 +199,7 @@ def command_panel_spec() -> CommandPanelSpec:
             PanelItem(
                 label="(no skills discovered)",
                 description="create skills under .agents/skills/ or ~/.agents/skills/",
-                command="",
+                action=None,
             ),
         )
         return PanelDefinition(
@@ -216,10 +217,10 @@ def register_actions(registry: ActionRegistry) -> None:
         [
             ActionSpec(
                 action_id="skills.show",
+                command_type=EmptyCommand,
                 feature_id="skills",
                 description="Show available skills and global enable/disable state",
                 ui_targets=UI_TARGETS,
-                required_capabilities=TEXT_REQUIRED,
                 triggers=(slash_trigger("/skills"),),
                 parser=_parse_show_skills,
                 handler=_handle_show_skills,
@@ -227,10 +228,11 @@ def register_actions(registry: ActionRegistry) -> None:
             ),
             ActionSpec(
                 action_id="skills.reload",
+                command_type=EmptyCommand,
+                audit="runtime_config_changed",
                 feature_id="skills",
                 description="[global] Reload skills from disk into the current process",
                 ui_targets=UI_TARGETS,
-                required_capabilities=TEXT_REQUIRED,
                 triggers=(slash_trigger("/skills reload"),),
                 parser=_parse_reload_skills,
                 handler=_handle_reload_skills,
@@ -238,10 +240,11 @@ def register_actions(registry: ActionRegistry) -> None:
             ),
             ActionSpec(
                 action_id="skills.enable",
+                command_type=ToggleSkillCommand,
+                audit="runtime_config_changed",
                 feature_id="skills",
                 description="[global] Enable a skill in workspace config",
                 ui_targets=UI_TARGETS,
-                required_capabilities=TEXT_REQUIRED,
                 triggers=(slash_trigger("/skills enable <name>"),),
                 parser=_parse_enable_skill,
                 handler=_handle_toggle_skill,
@@ -249,10 +252,11 @@ def register_actions(registry: ActionRegistry) -> None:
             ),
             ActionSpec(
                 action_id="skills.disable",
+                command_type=ToggleSkillCommand,
+                audit="runtime_config_changed",
                 feature_id="skills",
                 description="[global] Disable a skill in workspace config",
                 ui_targets=UI_TARGETS,
-                required_capabilities=TEXT_REQUIRED,
                 triggers=(slash_trigger("/skills disable <name>"),),
                 parser=_parse_disable_skill,
                 handler=_handle_toggle_skill,

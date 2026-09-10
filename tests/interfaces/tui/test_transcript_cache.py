@@ -16,7 +16,7 @@ def _populated_adapter(
     batch_size: int = 8,
 ) -> MiniTUIEventAdapter:
     adapter = MiniTUIEventAdapter(
-        performance_monitor=monitor,
+        performance_sink=monitor.record if monitor is not None else None,
         incident_sink=incident_sink,
         transcript_prewarm_batch_size=batch_size,
     )

@@ -1,6 +1,6 @@
 from reuleauxcoder.app.commands.registry import ActionRegistry
 from reuleauxcoder.app.commands.shared import slash_trigger
-from reuleauxcoder.app.commands.specs import ActionSpec
+from reuleauxcoder.app.commands.specs import ActionCatalog, ActionSpec
 from reuleauxcoder.interfaces.tui.command_popup import (
     build_popup_entries,
     filter_entries,
@@ -31,7 +31,7 @@ def _action(
     )
 
 
-def _registry() -> ActionRegistry:
+def _catalog() -> ActionCatalog:
     return ActionRegistry(
         [
             _action("mode.show", "Choose the active session mode", "/mode"),
@@ -58,11 +58,11 @@ def _registry() -> ActionRegistry:
             ),
             _action("help.show", "Show command help", "/help"),
         ]
-    )
+    ).catalog
 
 
 def test_build_entries_dedupes_aliases_to_shortest_completion() -> None:
-    entries = build_popup_entries(_registry(), _PROFILE)
+    entries = build_popup_entries(_catalog(), _PROFILE)
     completions = [entry.completion for entry in entries]
 
     assert "/session" in completions
@@ -72,7 +72,7 @@ def test_build_entries_dedupes_aliases_to_shortest_completion() -> None:
 
 
 def test_build_entries_adds_synthetic_root_for_families_without_bare() -> None:
-    entries = build_popup_entries(_registry(), _PROFILE)
+    entries = build_popup_entries(_catalog(), _PROFILE)
     thinking = [entry for entry in entries if entry.completion == "/thinking"]
 
     assert thinking, "expected a synthetic /thinking root entry"
@@ -80,7 +80,7 @@ def test_build_entries_adds_synthetic_root_for_families_without_bare() -> None:
 
 
 def test_build_entries_strips_placeholders() -> None:
-    entries = build_popup_entries(_registry(), _PROFILE)
+    entries = build_popup_entries(_catalog(), _PROFILE)
     by_completion = {entry.completion: entry for entry in entries}
 
     assert by_completion["/mode switch"].has_arg is True
@@ -89,20 +89,20 @@ def test_build_entries_strips_placeholders() -> None:
 
 
 def test_filter_roots_by_prefix() -> None:
-    entries = build_popup_entries(_registry(), _PROFILE)
+    entries = build_popup_entries(_catalog(), _PROFILE)
 
     roots = [entry.completion for entry in filter_entries(entries, "/mo")]
     assert roots == ["/mode"]
 
 
 def test_filter_lists_subcommands_after_space() -> None:
-    entries = build_popup_entries(_registry(), _PROFILE)
+    entries = build_popup_entries(_catalog(), _PROFILE)
 
     subs = [entry.completion for entry in filter_entries(entries, "/agents ")]
     assert subs == ["/agents cancel"]
 
 
 def test_filter_empty_for_non_slash_input() -> None:
-    entries = build_popup_entries(_registry(), _PROFILE)
+    entries = build_popup_entries(_catalog(), _PROFILE)
 
     assert filter_entries(entries, "hello") == ()

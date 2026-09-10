@@ -20,6 +20,7 @@ from reuleauxcoder.app.interaction_contracts import (
     ReviewRequest,
     ReviewResponse,
     UIInteractor,
+    cancelled_response,
 )
 
 ResponseT = TypeVar("ResponseT")
@@ -119,43 +120,36 @@ class InteractionCoordinator:
         return self._invoke(
             request,
             lambda: self.adapter.confirm(request),
-            lambda reason: ConfirmResponse(confirmed=False, cancelled=True),
         )
 
     def choose_one(self, request: ChooseOneRequest) -> ChooseOneResponse:
         return self._invoke(
             request,
             lambda: self.adapter.choose_one(request),
-            lambda reason: ChooseOneResponse(selected_id=None, cancelled=True),
         )
 
     def input_text(self, request: InputTextRequest) -> InputTextResponse:
         return self._invoke(
             request,
             lambda: self.adapter.input_text(request),
-            lambda reason: InputTextResponse(value=None, cancelled=True),
         )
 
     def review(self, request: ReviewRequest) -> ReviewResponse:
         return self._invoke(
             request,
             lambda: self.adapter.review(request),
-            lambda reason: ReviewResponse(
-                approved=False, cancelled=True, reason=reason
-            ),
         )
 
     def _invoke(
         self,
         request: Any,
         invoke: Callable[[], ResponseT],
-        cancelled: Callable[[str], ResponseT],
     ) -> ResponseT:
         request_id = request.request_id
         cancellation = _Cancellation(threading.Event())
         with self._state_lock:
             if self._closed:
-                return cancelled(self._shutdown_reason)
+                return cancelled_response(request, self._shutdown_reason)
             if request_id in self._cancellations:
                 raise ValueError(f"Duplicate interaction request id: {request_id}")
             self._cancellations[request_id] = cancellation
@@ -165,7 +159,7 @@ class InteractionCoordinator:
             while not acquired:
                 reason = self._cancel_reason(request.deadline, cancellation)
                 if reason is not None:
-                    return cancelled(reason)
+                    return cancelled_response(request, reason)
                 timeout = 0.05
                 if request.deadline is not None:
                     timeout = min(
@@ -175,12 +169,12 @@ class InteractionCoordinator:
 
             reason = self._cancel_reason(request.deadline, cancellation)
             if reason is not None:
-                return cancelled(reason)
+                return cancelled_response(request, reason)
             with self._state_lock:
                 self._active_request_id = request_id
             response = invoke()
             reason = self._cancel_reason(request.deadline, cancellation)
-            return cancelled(reason) if reason is not None else response
+            return cancelled_response(request, reason) if reason is not None else response
         finally:
             with self._state_lock:
                 if self._active_request_id == request_id:

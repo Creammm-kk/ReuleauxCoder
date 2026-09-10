@@ -83,3 +83,29 @@ def test_secret_text_uses_dedicated_masked_prompt() -> None:
 
     assert response.value == "  hidden value  "
     assert prompts == ["Enter hidden text: "]
+
+
+def test_backend_cancel_closes_visible_terminal_prompt(monkeypatch):
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+    from prompt_toolkit import PromptSession
+    from prompt_toolkit.input import create_pipe_input
+    from prompt_toolkit.output import DummyOutput
+    from reuleauxcoder.app.interaction_contracts import ConfirmRequest
+    import reuleauxcoder.interfaces.cli.interactor as module
+
+    with create_pipe_input() as pipe:
+        session = PromptSession(input=pipe, output=DummyOutput())
+        shown = threading.Event()
+        session.app.after_render += lambda app: shown.set()
+        monkeypatch.setattr(module, "PromptSession", lambda: session)
+        interactor = CLIUIInteractor(UIEventBus())
+        request = ConfirmRequest("Confirm", "Question")
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            response = pool.submit(interactor.confirm, request)
+            try:
+                assert shown.wait(2)
+                interactor.cancel(request.request_id)
+                assert response.result(timeout=2).cancelled
+            finally:
+                pipe.send_text("n\n")

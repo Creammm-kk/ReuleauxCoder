@@ -13,8 +13,8 @@ from reuleauxcoder.app.commands.panels import (
     PanelItem,
 )
 from reuleauxcoder.app.commands.registry import ActionRegistry
+from reuleauxcoder.app.commands.requests import ActionRequest
 from reuleauxcoder.app.commands.shared import (
-    TEXT_REQUIRED,
     UI_TARGETS,
     non_empty_text,
     slash_trigger,
@@ -263,7 +263,7 @@ def command_panel_spec() -> CommandPanelSpec:
             PanelItem(
                 label=job.job_id,
                 description=f"{job.status} · {job.mode} · {job.task[:40]}",
-                command="",
+                action=None,
                 current=job.status == "running",
             )
             for job in model.jobs
@@ -271,7 +271,7 @@ def command_panel_spec() -> CommandPanelSpec:
             PanelItem(
                 label="(no sub-agent jobs)",
                 description="spawn one via ask or background delegation",
-                command="",
+                action=None,
             ),
         )
         children: list[tuple[str, PanelDefinition]] = []
@@ -280,7 +280,9 @@ def command_panel_spec() -> CommandPanelSpec:
                 PanelItem(
                     label="get details",
                     description="full job view",
-                    command=f"/agents get {job.job_id}",
+                    action=ActionRequest(
+                        "subagent.jobs.get", GetSubagentJobCommand(job.job_id)
+                    ),
                 )
             ]
             if job.status not in terminal:
@@ -288,7 +290,10 @@ def command_panel_spec() -> CommandPanelSpec:
                     PanelItem(
                         label="cancel",
                         description="request cancellation",
-                        command=f"/agents cancel {job.job_id}",
+                        action=ActionRequest(
+                            "subagent.jobs.control",
+                            ControlSubagentJobCommand("cancel", job.job_id),
+                        ),
                     )
                 )
             else:
@@ -296,7 +301,10 @@ def command_panel_spec() -> CommandPanelSpec:
                     PanelItem(
                         label="cleanup",
                         description="remove isolated worktree",
-                        command=f"/agents cleanup {job.job_id}",
+                        action=ActionRequest(
+                            "subagent.jobs.control",
+                            ControlSubagentJobCommand("cleanup", job.job_id),
+                        ),
                     )
                 )
             children.append(
@@ -326,10 +334,10 @@ def register_actions(registry: ActionRegistry) -> None:
         [
             ActionSpec(
                 action_id="subagent.jobs.list",
+                command_type=ListSubagentJobsCommand,
                 feature_id="subagent",
                 description="[session] List sub-agent background jobs spawned from this session runtime",
                 ui_targets=UI_TARGETS,
-                required_capabilities=TEXT_REQUIRED,
                 triggers=(slash_trigger("/agents"), slash_trigger("/jobs")),
                 parser=_parse_list_jobs,
                 handler=_handle_list_jobs,
@@ -337,10 +345,10 @@ def register_actions(registry: ActionRegistry) -> None:
             ),
             ActionSpec(
                 action_id="subagent.jobs.get",
+                command_type=GetSubagentJobCommand,
                 feature_id="subagent",
                 description="[session] Show sub-agent job details for this session runtime",
                 ui_targets=UI_TARGETS,
-                required_capabilities=TEXT_REQUIRED,
                 triggers=(
                     slash_trigger("/agents get <id>"),
                     slash_trigger("/jobs get <id>"),
@@ -351,10 +359,10 @@ def register_actions(registry: ActionRegistry) -> None:
             ),
             ActionSpec(
                 action_id="subagent.jobs.wait",
+                command_type=WaitSubagentJobCommand,
                 feature_id="subagent",
                 description="[session] Wait for a sub-agent job started from this session runtime",
                 ui_targets=UI_TARGETS,
-                required_capabilities=TEXT_REQUIRED,
                 triggers=(
                     slash_trigger("/agents wait <id>"),
                     slash_trigger("/jobs wait <id>"),
@@ -365,10 +373,10 @@ def register_actions(registry: ActionRegistry) -> None:
             ),
             ActionSpec(
                 action_id="subagent.jobs.control",
+                command_type=ControlSubagentJobCommand,
                 feature_id="subagent",
                 description="[session] Cancel, message, resume, or clean up a sub-agent job",
                 ui_targets=UI_TARGETS,
-                required_capabilities=TEXT_REQUIRED,
                 triggers=(
                     slash_trigger("/agents cancel <id>"),
                     slash_trigger("/agents stop <id>"),

@@ -1,3 +1,7 @@
+from reuleauxcoder.app.commands.service import CommandService
+from reuleauxcoder.app.commands.capabilities import UIProfile, UICapability
+from reuleauxcoder.app.ui_events import UIEventBus
+from reuleauxcoder.app.commands.loader import create_builtin_action_registry
 from types import SimpleNamespace
 from reuleauxcoder.app.commands.models import CommandEffect
 
@@ -5,7 +9,6 @@ from reuleauxcoder.domain.config.models import Config
 from reuleauxcoder.extensions.command.builtin.system import (
     _handle_config,
     _handle_debug,
-    _handle_exit,
     _parse_config,
     _parse_debug,
     _handle_status_perf,
@@ -203,19 +206,22 @@ def test_config_command_emits_typed_effective_view() -> None:
 def test_exit_respects_disabled_auto_save(tmp_path) -> None:
     config = Config(session_auto_save=False)
     agent = SimpleNamespace(
+        current_session_id=None,
         messages=[{"role": "user", "content": "do not persist"}],
         llm=SimpleNamespace(model="demo"),
         state=SimpleNamespace(total_prompt_tokens=0, total_completion_tokens=0),
         active_mode=None,
     )
-    ctx = SimpleNamespace(
-        config=config,
-        agent=agent,
-        effect=CommandEffect(),
+    commands = CommandService(
+        agent,
+        config,
+        UIEventBus(),
+        UIProfile("cli", "CLI", frozenset({UICapability.TEXT_INPUT})),
+        create_builtin_action_registry(),
         sessions_dir=tmp_path,
     )
 
-    result = _handle_exit(SimpleNamespace(current_session_id=None), ctx)
+    result = commands.submit("/quit")
 
     assert result.control == "exit"
     assert not list(tmp_path.iterdir())
@@ -225,6 +231,7 @@ def test_exit_routes_auto_save_through_lifecycle(tmp_path) -> None:
     saved = []
     config = Config(session_auto_save=True)
     agent = SimpleNamespace(
+        current_session_id=None,
         messages=[{"role": "user", "content": "persist"}],
         llm=SimpleNamespace(model="demo"),
         state=SimpleNamespace(total_prompt_tokens=0, total_completion_tokens=0),
@@ -234,14 +241,16 @@ def test_exit_routes_auto_save_through_lifecycle(tmp_path) -> None:
         active_main_model_profile=None,
         active_sub_model_profile=None,
     )
-    ctx = SimpleNamespace(
-        config=config,
-        agent=agent,
-        effect=CommandEffect(),
+    commands = CommandService(
+        agent,
+        config,
+        UIEventBus(),
+        UIProfile("cli", "CLI", frozenset({UICapability.TEXT_INPUT})),
+        create_builtin_action_registry(),
         sessions_dir=tmp_path,
     )
 
-    _handle_exit(SimpleNamespace(current_session_id=None), ctx)
+    commands.submit("/quit")
 
     assert len(saved) == 1
     assert SessionStore(tmp_path).load(saved[0]) is not None

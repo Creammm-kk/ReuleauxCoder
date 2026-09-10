@@ -21,7 +21,7 @@ from reuleauxcoder.extensions.command.builtin.sessions import (
     _parse_list_sessions,
 )
 from reuleauxcoder.infrastructure.persistence.session_store import SessionStore
-from reuleauxcoder.interfaces.cli.commands import handle_command
+from reuleauxcoder.app.commands.service import CommandService
 from reuleauxcoder.app.ui_events import UIEventBus, UIEventKind
 from reuleauxcoder.app.commands.capabilities import UICapability, UIProfile
 
@@ -46,6 +46,8 @@ class FakeContext:
 
 class FakeAgent:
     def __init__(self) -> None:
+        self.current_session_id = None
+        self.session_generation = 0
         self.llm = FakeLLM()
         self.context = FakeContext()
         self.state = SimpleNamespace(
@@ -65,6 +67,7 @@ class FakeAgent:
         self.active_mode = mode_name
 
     def reset(self) -> None:
+        self.session_generation += 1
         self.state.messages.clear()
         self.messages = self.state.messages
         self.state.total_prompt_tokens = 0
@@ -86,11 +89,9 @@ def _build_ctx(tmp_path: Path, *, fingerprint: str = "local") -> SimpleNamespace
 
 
 def _run_command(ctx, user_input: str, ui_bus: UIEventBus):
-    return handle_command(
-        user_input,
+    return CommandService(
         ctx.agent,
         ctx.config,
-        ctx.agent.current_session_id,
         ui_bus,
         UIProfile(
             ui_id="cli",
@@ -99,7 +100,7 @@ def _run_command(ctx, user_input: str, ui_bus: UIEventBus):
         ),
         create_builtin_action_registry(),
         sessions_dir=ctx.sessions_dir,
-    )
+    ).submit(user_input)
 
 
 def test_list_sessions_defaults_to_current_fingerprint(tmp_path: Path) -> None:
@@ -222,8 +223,8 @@ def test_corrupt_resume_keeps_current_session_and_exposes_safe_failure_fact(
 
     result = _run_command(ctx, f"/session {target_id}", ui_bus)
 
-    assert result["action"] == "continue"
-    assert result["session_id"] == "current-session"
+    assert result.control == "continue"
+    assert result.session_id == "current-session"
     assert ctx.agent.current_session_id == "current-session"
     assert ctx.agent.messages[-1]["content"] == "current work"
     assert ctx.agent.runtime_issues == [("replay_decode", "JSONDecodeError", "replay")]
@@ -240,8 +241,8 @@ def test_missing_resume_is_a_model_visible_failed_command(tmp_path: Path) -> Non
 
     result = _run_command(ctx, "/session session_missing", ui_bus)
 
-    assert result["action"] == "continue"
-    assert result["session_id"] == "current-session"
+    assert result.control == "continue"
+    assert result.session_id == "current-session"
     assert ctx.agent.messages[-1]["content"] == "current work"
     assert ctx.agent.runtime_issues == [
         ("session_discovery", "FileNotFoundError", "session")
@@ -324,9 +325,8 @@ def test_resume_auto_saves_the_session_being_left(tmp_path: Path) -> None:
     ctx = _build_ctx(tmp_path)
     ctx.agent.messages.append({"role": "user", "content": "unsaved current work"})
 
-    result = _handle_resume_session(
-        ResumeSessionCommand(target=target_id, current_session_id="current"), ctx
-    )
+    ctx.agent.current_session_id = "current"
+    result = _handle_resume_session(ResumeSessionCommand(target=target_id), ctx)
 
     assert result.session_id == target_id
     saved_current = store.load("current")
@@ -334,12 +334,92 @@ def test_resume_auto_saves_the_session_being_left(tmp_path: Path) -> None:
     assert saved_current.get_preview() == "unsaved current work"
 
 
+def test_service_queued_save_follows_new_session_and_returns_transition(tmp_path):
+    ctx = _build_ctx(tmp_path)
+    ctx.config.session_auto_save = False
+    ctx.agent.current_session_id = "old"
+    ctx.agent.messages.append({"role": "user", "content": "old work"})
+    commands = CommandService(
+        ctx.agent,
+        ctx.config,
+        UIEventBus(),
+        UIProfile("tui", "TUI", frozenset(UICapability)),
+        create_builtin_action_registry(),
+        sessions_dir=tmp_path,
+    )
+
+    commands.prepare_during_turn("/save")
+    result = commands.submit("/new")
+    assert result.clear_transcript and result.session_changed
+    assert result.session_id == commands.session_id != "old"
+    ctx.agent.messages.append({"role": "user", "content": "new work"})
+    commands.submit(commands.next_pending())
+
+    assert SessionStore(tmp_path).load(result.session_id).get_preview() == "new work"
+    assert SessionStore(tmp_path).load("old") is None
+
+
+def test_service_resume_marker_is_consumed_once_and_reset_clears_it(tmp_path):
+    ctx = _build_ctx(tmp_path)
+    ctx.config.session_auto_save = False
+    store = SessionStore(tmp_path)
+    sid = store.save([{"role": "user", "content": "saved"}], "m", is_exit=True)
+    commands = CommandService(
+        ctx.agent,
+        ctx.config,
+        UIEventBus(),
+        UIProfile("cli", "CLI", frozenset(UICapability)),
+        create_builtin_action_registry(),
+        sessions_dir=tmp_path,
+    )
+
+    assert commands.submit(f"/session {sid}").session_changed
+    assert commands.prepare_chat_input("continue").startswith("[SESSION_RESUME]")
+    assert commands.prepare_chat_input("again") == "again"
+    assert commands.submit(f"/session {sid}").session_changed
+    commands.submit("/reset")
+    assert commands.prepare_chat_input("fresh") == "fresh"
+
+
+def test_service_exit_preserves_content_once_even_when_observer_crashes(
+    tmp_path, caplog
+):
+    ctx = _build_ctx(tmp_path)
+    ctx.agent.messages.append({"role": "user", "content": "keep this"})
+    observed = []
+
+    def saved(sid):
+        observed.append(sid)
+        raise RuntimeError("observer failed")
+
+    ctx.agent.lifecycle = SimpleNamespace(session_saved=saved)
+    commands = CommandService(
+        ctx.agent,
+        ctx.config,
+        UIEventBus(),
+        UIProfile("cli", "CLI", frozenset(UICapability)),
+        create_builtin_action_registry(),
+        sessions_dir=tmp_path,
+    )
+
+    with pytest.raises(RuntimeError, match="observer failed"):
+        commands.submit("/quit")
+    sid = commands.exit_saved_session_id
+    assert commands.save_exit() == sid == commands.session_id
+    assert observed == [sid]
+    loaded = SessionStore(tmp_path).load(sid)
+    assert loaded.get_preview() == "keep this"
+    assert loaded.fingerprint == "local"
+    assert loaded.model == ctx.agent.llm.model
+    assert caplog.records[-1].getMessage() == "Command failed: system.exit"
+
+
 def test_new_session_respects_disabled_auto_save(tmp_path: Path) -> None:
     ctx = _build_ctx(tmp_path)
     ctx.config.session_auto_save = False
     ctx.agent.messages.append({"role": "user", "content": "do not persist"})
 
-    result = _handle_new_session(NewSessionCommand(current_session_id=None), ctx)
+    result = _handle_new_session(NewSessionCommand(), ctx)
 
     assert result.session_id is not None
     assert SessionStore(tmp_path).list() == []

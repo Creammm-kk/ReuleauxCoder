@@ -17,6 +17,7 @@ from reuleauxcoder.app.interaction_contracts import (
     InputTextResponse,
     ReviewRequest,
     ReviewResponse,
+    cancelled_response,
 )
 
 
@@ -139,17 +140,6 @@ def interaction_response(
             return InputTextResponse(value)
         return InputTextResponse(None, cancelled=True)
     return None
-
-
-def cancelled_response(request, reason: str):
-    """Build the request-specific cancellation response."""
-    if isinstance(request, ReviewRequest):
-        return ReviewResponse(False, cancelled=True, reason=reason)
-    if isinstance(request, ConfirmRequest):
-        return ConfirmResponse(False, cancelled=True)
-    if isinstance(request, ChooseOneRequest):
-        return ChooseOneResponse(None, cancelled=True)
-    return InputTextResponse(None, cancelled=True)
 
 
 class MiniTUIInteractor:

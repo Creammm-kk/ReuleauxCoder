@@ -44,9 +44,7 @@ _URLOPEN = request.build_opener(request.ProxyHandler({})).open
 
 def _session_entry_names(path: Path) -> set[str]:
     return {
-        entry.name
-        for entry in path.iterdir()
-        if entry.name != INDEX_DIRECTORY_NAME
+        entry.name for entry in path.iterdir() if entry.name != INDEX_DIRECTORY_NAME
     }
 
 
@@ -572,9 +570,7 @@ class TestRunnerRemoteExec:
             assert runner._relay_server is not None
             assert runner._relay_http_service is not None
             ctx.ui_bus.subscribe(
-                lambda _event: (_ for _ in ()).throw(
-                    SystemExit("renderer-secret")
-                ),
+                lambda _event: (_ for _ in ()).throw(SystemExit("renderer-secret")),
                 replay_history=False,
             )
             _, peer_token = _register_peer(
@@ -896,6 +892,60 @@ class TestRunnerRemoteExec:
                 and "Open view:" in event["payload"].get("content", "")
                 for event in events
             )
+        finally:
+            runner.cleanup(ctx.agent)
+
+    def test_remote_exit_commits_one_snapshot_and_commands_never_reach_chat(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        chats = []
+        saves = []
+
+        def chat_behavior(agent, prompt):
+            chats.append(prompt)
+            return "done"
+
+        runner = _build_runner_with_fake_agent(
+            f"127.0.0.1:{_free_port()}",
+            session_dir=tmp_path / "sessions",
+            chat_behavior=chat_behavior,
+        )
+        ctx = runner.initialize()
+        original_save = SessionStore.save
+
+        def save(store, *args, **kwargs):
+            sid = original_save(store, *args, **kwargs)
+            saves.append((sid, kwargs.get("is_exit", False)))
+            return sid
+
+        monkeypatch.setattr(SessionStore, "save", save)
+        try:
+            base_url = runner._relay_http_service.base_url
+            _, token = _register_peer(
+                base_url,
+                runner._relay_server.issue_bootstrap_token(ttl_sec=60),
+                str(tmp_path),
+            )
+
+            def submit(prompt):
+                _, started = _json_request(
+                    "POST",
+                    f"{base_url}/remote/chat/start",
+                    {"peer_token": token, "prompt": prompt},
+                )
+                events = _collect_stream_events(base_url, token, started["chat_id"])
+                assert not [event for event in events if event["type"] == "error"]
+
+            submit("preserve work")
+            submit("/thinking effort high")
+            saves.clear()
+            submit("/quit")
+
+            assert chats == ["preserve work"]
+            assert len(saves) == 1 and saves[0][1] is True
+            saved = SessionStore(tmp_path / "sessions").load(saves[0][0])
+            assert saved.get_preview() == "preserve work"
+            assert saved.fingerprint.startswith("remote:")
         finally:
             runner.cleanup(ctx.agent)
 

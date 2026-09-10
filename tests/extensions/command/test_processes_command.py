@@ -1,4 +1,7 @@
 from __future__ import annotations
+from reuleauxcoder.app.commands.requests import ActionRequest
+from reuleauxcoder.app.commands.service import CommandService
+from reuleauxcoder.app.ui_events import UIEventBus
 
 import shlex
 import sys
@@ -17,7 +20,6 @@ from reuleauxcoder.extensions.command.builtin.processes import (
     SecureProcessInputCommand,
     _handle_control,
     _handle_list,
-    _handle_secure_input,
     _parse_control,
     _parse_list,
     _parse_secure_input,
@@ -70,10 +72,7 @@ def test_hidden_input_command_is_not_advertised_to_unmasked_remote_cli() -> None
     register_actions(registry)
 
     assert registry.parse("/ps input proc_1", ui_profile=CLI_PROFILE) is not None
-    assert (
-        registry.parse("/ps input proc_1", ui_profile=REMOTE_CLI_PROFILE)
-        is None
-    )
+    assert registry.parse("/ps input proc_1", ui_profile=REMOTE_CLI_PROFILE) is None
 
 
 def test_process_panel_is_owned_by_process_command_and_exposes_factual_actions(
@@ -102,10 +101,16 @@ def test_process_panel_is_owned_by_process_command_and_exposes_factual_actions(
     assert definition is not None
     child = definition.child_for(handle.session_id)
     assert child is not None
-    assert tuple(item.command for item in child.items) == (
-        f"/ps poll {handle.session_id}",
-        f"/ps interrupt {handle.session_id}",
-        f"/ps terminate {handle.session_id}",
+    assert tuple(item.action for item in child.items) == (
+        ActionRequest(
+            "processes.control", ControlProcessCommand("poll", handle.session_id)
+        ),
+        ActionRequest(
+            "processes.control", ControlProcessCommand("interrupt", handle.session_id)
+        ),
+        ActionRequest(
+            "processes.control", ControlProcessCommand("terminate", handle.session_id)
+        ),
     )
 
     ctx.effect = CommandEffect()
@@ -150,9 +155,21 @@ def test_hidden_process_input_is_direct_and_never_returned(tmp_path) -> None:
     manager.publish(handle.session_id)
     ctx = _context(manager, interactor=_Interactor())
 
-    result = _handle_secure_input(
-        SecureProcessInputCommand(handle.session_id),
-        ctx,
+    bus = UIEventBus()
+    registry = ActionRegistry()
+    register_actions(registry)
+    commands = CommandService(
+        ctx.agent,
+        SimpleNamespace(),
+        bus,
+        CLI_PROFILE,
+        registry,
+        interactions=ctx.ui_interactor,
+    )
+    commands.submit(
+        ActionRequest(
+            "processes.secure_input", SecureProcessInputCommand(handle.session_id)
+        )
     )
     deadline = time.monotonic() + 5
     output = ""
@@ -170,17 +187,17 @@ def test_hidden_process_input_is_direct_and_never_returned(tmp_path) -> None:
         state = snapshot.state
 
     assert requests[0].secret is True
-    assert secret not in result.notifications[0].message
+    assert all(secret not in event.message for event in bus.history_snapshot())
     assert secret not in output
     assert "[hidden input redacted]" in output
     definition = command_panel_spec().build_for(
-        result.views[-1].view_model,
+        bus.history_snapshot()[-1].payload.view_model,
         "Process Sessions",
     )
     assert definition is not None
     child = definition.child_for(handle.session_id)
     assert child is not None
-    assert f"/ps input {handle.session_id}" in tuple(
-        item.command for item in child.items
-    )
+    assert ActionRequest(
+        "processes.secure_input", SecureProcessInputCommand(handle.session_id)
+    ) in tuple(item.action for item in child.items)
     manager.shutdown()

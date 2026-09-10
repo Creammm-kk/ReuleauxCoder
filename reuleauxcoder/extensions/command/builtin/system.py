@@ -18,30 +18,25 @@ from reuleauxcoder.app.commands.params import ParamParseError
 from reuleauxcoder.app.commands.registry import ActionRegistry
 from reuleauxcoder.app.commands.shared import (
     EmptyCommand,
-    TEXT_REQUIRED,
     UI_TARGETS,
     enum_text,
     slash_trigger,
 )
 from reuleauxcoder.app.commands.specs import ActionSpec, DuringTurnPolicy
 from reuleauxcoder.app.runtime.session_state import (
-    build_session_persistence_kwargs,
-    build_session_runtime_state,
-    get_session_fingerprint,
     restore_config_runtime_defaults,
 )
 from reuleauxcoder.app.runtime.effective_config import build_effective_config_view
 from reuleauxcoder.domain.context.manager import estimate_tokens
 from reuleauxcoder.domain.runtime.performance import PerformanceSample
 from reuleauxcoder.infrastructure.fs.paths import get_diagnostics_dir
-from reuleauxcoder.infrastructure.persistence.session_store import SessionStore
 
 _FORCE_COMPACT_STRATEGIES = {"snip", "summarize", "collapse"}
 
 
 @dataclass(frozen=True, slots=True)
 class ExitCommand:
-    current_session_id: str | None = None
+    pass
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,7 +57,7 @@ def _parse_help(user_input: str, parse_ctx):
 
 def _parse_exit(user_input: str, parse_ctx):
     if matches_any(user_input, ("/quit", "/exit"), case_insensitive=True):
-        return ExitCommand(current_session_id=parse_ctx.current_session_id)
+        return ExitCommand()
     return None
 
 
@@ -144,24 +139,10 @@ def _handle_show_help(command, ctx) -> CommandEffect:
 
 
 def _handle_exit(command, ctx) -> CommandEffect:
-    if ctx.agent.messages and ctx.config.session_auto_save:
-        sid = SessionStore(ctx.sessions_dir).save(
-            ctx.agent.messages,
-            getattr(ctx.agent.llm, "model", ctx.config.model),
-            command.current_session_id,
-            is_exit=True,
-            total_prompt_tokens=ctx.agent.state.total_prompt_tokens,
-            total_completion_tokens=ctx.agent.state.total_completion_tokens,
-            active_mode=getattr(ctx.agent, "active_mode", None),
-            runtime_state=build_session_runtime_state(ctx.config, ctx.agent),
-            fingerprint=get_session_fingerprint(ctx.config, ctx.agent),
-            incremental=True,
-            events_already_persisted=True,
-            **build_session_persistence_kwargs(ctx.agent),
-        )
-        ctx.agent.lifecycle.session_saved(sid)
+    sid = ctx.exit_session()
+    if sid is not None:
         ctx.effect.info(f"Session auto-saved: {sid}")
-    return ctx.effect.finish(control="exit", session_id=command.current_session_id)
+    return ctx.effect.finish(control="exit", session_id=ctx.agent.current_session_id)
 
 
 def _handle_reset(command, ctx) -> CommandEffect:
@@ -169,9 +150,7 @@ def _handle_reset(command, ctx) -> CommandEffect:
     restore_config_runtime_defaults(ctx.config, ctx.agent)
     process_manager = getattr(ctx.agent, "process_manager", None)
     active_processes = (
-        process_manager.active_count(
-            owner_session_id=ctx.agent.current_session_id
-        )
+        process_manager.active_count(owner_session_id=ctx.agent.current_session_id)
         if process_manager is not None
         else 0
     )
@@ -298,7 +277,9 @@ def _handle_debug(command, ctx) -> CommandEffect:
             f"{get_diagnostics_dir()}. The session event ledger remains bounded."
         )
     else:
-        ctx.effect.info("Detailed LLM request/response traces disabled for this session.")
+        ctx.effect.info(
+            "Detailed LLM request/response traces disabled for this session."
+        )
     return ctx.effect.finish(
         control="continue", state_changes={"llm_debug_trace": enabled}
     )
@@ -423,10 +404,10 @@ def register_actions(registry: ActionRegistry) -> None:
         [
             ActionSpec(
                 action_id="system.help",
+                command_type=EmptyCommand,
                 feature_id="system",
                 description="Show command help and scope annotations",
                 ui_targets=UI_TARGETS,
-                required_capabilities=TEXT_REQUIRED,
                 triggers=(slash_trigger("/help"),),
                 parser=_parse_help,
                 handler=_handle_show_help,
@@ -434,40 +415,42 @@ def register_actions(registry: ActionRegistry) -> None:
             ),
             ActionSpec(
                 action_id="system.exit",
+                command_type=ExitCommand,
+                audit="session_lifecycle",
                 feature_id="system",
                 description="Exit the interface after auto-saving the current session",
                 ui_targets=UI_TARGETS,
-                required_capabilities=TEXT_REQUIRED,
                 triggers=(slash_trigger("/quit"),),
                 parser=_parse_exit,
                 handler=_handle_exit,
             ),
             ActionSpec(
                 action_id="system.reset",
+                command_type=EmptyCommand,
+                audit="session_lifecycle",
                 feature_id="system",
                 description="[session] Reset in-memory conversation and session runtime overrides",
                 ui_targets=UI_TARGETS,
-                required_capabilities=TEXT_REQUIRED,
                 triggers=(slash_trigger("/reset"),),
                 parser=_parse_reset,
                 handler=_handle_reset,
             ),
             ActionSpec(
                 action_id="system.compact",
+                command_type=CompactContextCommand,
                 feature_id="system",
                 description="[session] Compact the current conversation context",
                 ui_targets=UI_TARGETS,
-                required_capabilities=TEXT_REQUIRED,
                 triggers=(slash_trigger("/compact"),),
                 parser=_parse_compact,
                 handler=_handle_compact,
             ),
             ActionSpec(
                 action_id="system.tokens",
+                command_type=EmptyCommand,
                 feature_id="system",
                 description="[session] Show token usage for the current session",
                 ui_targets=UI_TARGETS,
-                required_capabilities=TEXT_REQUIRED,
                 triggers=(slash_trigger("/tokens"),),
                 parser=_parse_tokens,
                 handler=_handle_tokens,
@@ -475,10 +458,11 @@ def register_actions(registry: ActionRegistry) -> None:
             ),
             ActionSpec(
                 action_id="system.debug",
+                command_type=DebugCommand,
+                audit="runtime_config_changed",
                 feature_id="system",
                 description="[session] Toggle detailed LLM request/response traces",
                 ui_targets=UI_TARGETS,
-                required_capabilities=TEXT_REQUIRED,
                 triggers=(
                     slash_trigger("/debug"),
                     slash_trigger("/debug <on|off>"),
@@ -489,10 +473,10 @@ def register_actions(registry: ActionRegistry) -> None:
             ),
             ActionSpec(
                 action_id="system.status_perf",
+                command_type=EmptyCommand,
                 feature_id="system",
                 description="[session] Show recent runtime performance timings",
                 ui_targets=UI_TARGETS,
-                required_capabilities=TEXT_REQUIRED,
                 triggers=(
                     slash_trigger("/status perf"),
                     slash_trigger("/debug performance"),
@@ -503,10 +487,10 @@ def register_actions(registry: ActionRegistry) -> None:
             ),
             ActionSpec(
                 action_id="system.config",
+                command_type=EmptyCommand,
                 feature_id="system",
                 description="Show effective configuration values, sources and diagnostics",
                 ui_targets=UI_TARGETS,
-                required_capabilities=TEXT_REQUIRED,
                 triggers=(slash_trigger("/config"),),
                 parser=_parse_config,
                 handler=_handle_config,

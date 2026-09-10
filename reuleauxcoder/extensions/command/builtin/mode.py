@@ -14,9 +14,9 @@ from reuleauxcoder.app.commands.panels import (
     PanelItem,
 )
 from reuleauxcoder.app.commands.registry import ActionRegistry
+from reuleauxcoder.app.commands.requests import ActionRequest
 from reuleauxcoder.app.commands.shared import (
     EmptyCommand,
-    TEXT_REQUIRED,
     UI_TARGETS,
     non_empty_text,
     slash_trigger,
@@ -162,7 +162,7 @@ def command_panel_spec() -> CommandPanelSpec:
                 PanelItem(
                     label=mode.name,
                     description=mode.description,
-                    command=f"/mode switch {mode.name}",
+                    action=ActionRequest("mode.switch", SwitchModeCommand(mode.name)),
                     current=mode.active,
                 )
                 for mode in model.modes
@@ -177,10 +177,10 @@ def register_actions(registry: ActionRegistry) -> None:
         [
             ActionSpec(
                 action_id="mode.show",
+                command_type=EmptyCommand,
                 feature_id="mode",
                 description="Show available modes and the current session mode",
                 ui_targets=UI_TARGETS,
-                required_capabilities=TEXT_REQUIRED,
                 triggers=(slash_trigger("/mode"),),
                 parser=_parse_show_mode,
                 handler=_handle_show_mode,
@@ -188,10 +188,10 @@ def register_actions(registry: ActionRegistry) -> None:
             ),
             ActionSpec(
                 action_id="mode.current",
+                command_type=EmptyCommand,
                 feature_id="mode",
                 description="[session] Show the current session mode",
                 ui_targets=UI_TARGETS,
-                required_capabilities=TEXT_REQUIRED,
                 triggers=(slash_trigger("/mode current"), slash_trigger("/mode now")),
                 parser=_parse_current_mode,
                 handler=_handle_current_mode,
@@ -199,10 +199,11 @@ def register_actions(registry: ActionRegistry) -> None:
             ),
             ActionSpec(
                 action_id="mode.switch",
+                command_type=SwitchModeCommand,
+                audit="runtime_config_changed",
                 feature_id="mode",
                 description="[session] Switch the active session mode",
                 ui_targets=UI_TARGETS,
-                required_capabilities=TEXT_REQUIRED,
                 triggers=(
                     slash_trigger("/mode switch <name>"),
                     slash_trigger("/mode <name>"),

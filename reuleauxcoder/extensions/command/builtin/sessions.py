@@ -13,8 +13,8 @@ from reuleauxcoder.app.commands.panels import (
     PanelItem,
 )
 from reuleauxcoder.app.commands.registry import ActionRegistry
+from reuleauxcoder.app.commands.requests import ActionRequest
 from reuleauxcoder.app.commands.shared import (
-    TEXT_REQUIRED,
     UI_TARGETS,
     non_empty_text,
     slash_trigger,
@@ -50,17 +50,16 @@ class ListSessionsCommand:
 @dataclass(frozen=True, slots=True)
 class ResumeSessionCommand:
     target: str
-    current_session_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
 class SaveSessionCommand:
-    current_session_id: str | None = None
+    pass
 
 
 @dataclass(frozen=True, slots=True)
 class NewSessionCommand:
-    current_session_id: str | None = None
+    pass
 
 
 def _settle_current_session(ctx, store, session_id: str | None, fingerprint: str):
@@ -109,24 +108,20 @@ def _parse_resume_session(user_input: str, parse_ctx):
     try:
         target = non_empty_text().parse(captures["target"])
     except ParamParseError:
-        return ResumeSessionCommand(
-            target="", current_session_id=parse_ctx.current_session_id
-        )
+        return ResumeSessionCommand(target="")
 
-    return ResumeSessionCommand(
-        target=target, current_session_id=parse_ctx.current_session_id
-    )
+    return ResumeSessionCommand(target=target)
 
 
 def _parse_save_session(user_input: str, parse_ctx):
     if match_template(user_input, "/save") is not None:
-        return SaveSessionCommand(current_session_id=parse_ctx.current_session_id)
+        return SaveSessionCommand()
     return None
 
 
 def _parse_new_session(user_input: str, parse_ctx):
     if match_template(user_input, "/new") is not None:
-        return NewSessionCommand(current_session_id=parse_ctx.current_session_id)
+        return NewSessionCommand()
     return None
 
 
@@ -246,9 +241,7 @@ def _resume_session(command, ctx) -> CommandEffect:
             current_fingerprint=fingerprint,
         )
 
-    current_session_id = command.current_session_id or getattr(
-        ctx.agent, "current_session_id", None
-    )
+    current_session_id = ctx.agent.current_session_id
     if (
         current_session_id
         and current_session_id != session_id
@@ -342,7 +335,7 @@ def _handle_save_session(command, ctx) -> CommandEffect:
     store = SessionStore(ctx.sessions_dir)
     fingerprint = get_session_fingerprint(ctx.config, ctx.agent)
     session_id = _save_session_snapshot(
-        ctx, store, command.current_session_id, fingerprint
+        ctx, store, ctx.agent.current_session_id, fingerprint
     )
     ctx.agent.lifecycle.session_saved(session_id)
     ctx.effect.success(
@@ -361,9 +354,10 @@ def _handle_save_session(command, ctx) -> CommandEffect:
 
 
 def _handle_new_session(command, ctx) -> CommandEffect:
+    ctx.effect.clear_transcript = True
     store = SessionStore(ctx.sessions_dir)
     fingerprint = get_session_fingerprint(ctx.config, ctx.agent)
-    previous_session_id = command.current_session_id
+    previous_session_id = ctx.agent.current_session_id
     if ctx.agent.messages and ctx.config.session_auto_save:
         sid = _settle_current_session(
             ctx,
@@ -432,7 +426,9 @@ def command_panel_spec() -> CommandPanelSpec:
                     f"{session.model} · {session.preview[:40]} · {session.session_id}"
                     f"{' [active]' if session.active else ''}"
                 ),
-                command=f"/session {session.session_id}",
+                action=ActionRequest(
+                    "sessions.resume", ResumeSessionCommand(session.session_id)
+                ),
                 current=session.active,
             )
             for session in model.sessions
@@ -440,7 +436,7 @@ def command_panel_spec() -> CommandPanelSpec:
             PanelItem(
                 label="(no saved sessions)",
                 description="/save writes a restorable snapshot",
-                command="",
+                action=None,
             ),
         )
         return PanelDefinition(
@@ -458,10 +454,10 @@ def register_actions(registry: ActionRegistry) -> None:
         [
             ActionSpec(
                 action_id="sessions.list",
+                command_type=ListSessionsCommand,
                 feature_id="sessions",
                 description="[session-index] Browse saved sessions (add `all` to include every fingerprint)",
                 ui_targets=UI_TARGETS,
-                required_capabilities=TEXT_REQUIRED,
                 triggers=(
                     slash_trigger("/session"),
                     slash_trigger("/session all"),
@@ -474,30 +470,33 @@ def register_actions(registry: ActionRegistry) -> None:
             ),
             ActionSpec(
                 action_id="sessions.resume",
+                command_type=ResumeSessionCommand,
+                audit="session_lifecycle",
                 feature_id="sessions",
                 description="[session-index] Restore by displayed number, full ID, or newest fingerprint match",
                 ui_targets=UI_TARGETS,
-                required_capabilities=TEXT_REQUIRED,
                 triggers=(slash_trigger("/session <#|id|latest>"),),
                 parser=_parse_resume_session,
                 handler=_handle_resume_session,
             ),
             ActionSpec(
                 action_id="sessions.save",
+                command_type=SaveSessionCommand,
+                audit="session_lifecycle",
                 feature_id="sessions",
                 description="[session] Save the current session with its runtime overrides and fingerprint",
                 ui_targets=UI_TARGETS,
-                required_capabilities=TEXT_REQUIRED,
                 triggers=(slash_trigger("/save"),),
                 parser=_parse_save_session,
                 handler=_handle_save_session,
             ),
             ActionSpec(
                 action_id="sessions.new",
+                command_type=NewSessionCommand,
+                audit="session_lifecycle",
                 feature_id="sessions",
                 description="[session] Start a new session after auto-saving the current one",
                 ui_targets=UI_TARGETS,
-                required_capabilities=TEXT_REQUIRED,
                 triggers=(slash_trigger("/new"),),
                 parser=_parse_new_session,
                 handler=_handle_new_session,

@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from contextlib import contextmanager
 import sys
 import threading
+import time
 
-from prompt_toolkit import prompt as pt_prompt
+from prompt_toolkit import PromptSession
 
 from reuleauxcoder.app.ui_events import UIEvent, UIEventBus, UIEventKind
 from reuleauxcoder.app.interaction_contracts import (
@@ -28,15 +30,53 @@ class CLIUIInteractor:
         self,
         ui_bus: UIEventBus,
         *,
-        prompt_fn: Callable[[str], str] = pt_prompt,
+        prompt_fn: Callable[[str], str] | None = None,
         secret_prompt_fn: Callable[[str], str] | None = None,
     ):
         self.ui_bus = ui_bus
-        self._prompt = prompt_fn
+        self._prompt = prompt_fn or self._terminal_prompt
         self._secret_prompt = secret_prompt_fn or (
-            lambda message: pt_prompt(message, is_password=True)
+            lambda message: self._terminal_prompt(message, is_password=True)
         )
         self._interaction_lock = threading.Lock()
+        self._request = None
+        self._active_prompt = None
+
+    @contextmanager
+    def _interaction(self, request):
+        with self._interaction_lock:
+            self._request = request
+            try:
+                yield
+            finally:
+                self._request = None
+
+    def _terminal_prompt(self, message, *, is_password=False):
+        session = self._active_prompt = PromptSession()
+        try:
+            return session.prompt(
+                message, is_password=is_password, pre_run=self._cancel_expired_prompt
+            )
+        finally:
+            self._active_prompt = None
+
+    def _cancel_expired_prompt(self):
+        request, session = self._request, self._active_prompt
+        if (
+            request is not None
+            and request.deadline is not None
+            and request.deadline <= time.monotonic()
+            and session is not None
+            and session.app.is_running
+        ):
+            session.app.exit(exception=EOFError())
+
+    def cancel(self, request_id):
+        request, session = self._request, self._active_prompt
+        if request is not None and request.request_id == request_id:
+            request.deadline = time.monotonic()
+            if session is not None and session.app.is_running:
+                session.app.loop.call_soon_threadsafe(self._cancel_expired_prompt)
 
     @staticmethod
     def _finish_interrupted_prompt() -> None:
@@ -53,7 +93,7 @@ class CLIUIInteractor:
         self.ui_bus.emit(event)
 
     def confirm(self, request: ConfirmRequest) -> ConfirmResponse:
-        with self._interaction_lock:
+        with self._interaction(request):
             self.ui_bus.emit_interaction_prompt(request)
             while True:
                 try:
@@ -70,7 +110,7 @@ class CLIUIInteractor:
                 )
 
     def choose_one(self, request: ChooseOneRequest) -> ChooseOneResponse:
-        with self._interaction_lock:
+        with self._interaction(request):
             self.ui_bus.emit_interaction_prompt(request)
             if not request.items:
                 self.ui_bus.warning("No options available.", kind=UIEventKind.COMMAND)
@@ -98,7 +138,7 @@ class CLIUIInteractor:
                 )
 
     def input_text(self, request: InputTextRequest) -> InputTextResponse:
-        with self._interaction_lock:
+        with self._interaction(request):
             self.ui_bus.emit_interaction_prompt(request)
             prompt = request.prompt
             if request.placeholder:
@@ -126,15 +166,17 @@ class CLIUIInteractor:
                 return InputTextResponse(value=answer)
 
     def review(self, request: ReviewRequest) -> ReviewResponse:
-        with self._interaction_lock:
+        with self._interaction(request):
             self.ui_bus.emit_interaction_prompt(request)
 
             while True:
                 try:
                     session_hint = ", s=session" if request.grant_options else ""
-                    answer = self._prompt(
-                        f"Select [1/2, y/n{session_hint}, f=feedback]: "
-                    ).strip().lower()
+                    answer = (
+                        self._prompt(f"Select [1/2, y/n{session_hint}, f=feedback]: ")
+                        .strip()
+                        .lower()
+                    )
                 except (KeyboardInterrupt, EOFError):
                     self._interrupted()
                     return ReviewResponse(
@@ -189,9 +231,7 @@ class CLIUIInteractor:
         )
         while True:
             try:
-                answer = self._prompt(
-                    "Grant scope (blank returns to review): "
-                ).strip()
+                answer = self._prompt("Grant scope (blank returns to review): ").strip()
             except (KeyboardInterrupt, EOFError):
                 return None
             if not answer:

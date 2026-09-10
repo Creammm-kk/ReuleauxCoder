@@ -18,11 +18,11 @@ class EmptyCommand:
 
 
 def slash_trigger(value: str) -> TriggerSpec:
-    """Build a CLI slash trigger declaration with text-input capability requirement."""
+    """Require text input for slash syntax, independently of action capabilities."""
     return TriggerSpec(
         kind=TriggerKind.SLASH,
         value=value,
-        ui_targets=frozenset({"cli"}),
+        ui_targets=UI_TARGETS,
         required_capabilities=TEXT_REQUIRED,
     )
 

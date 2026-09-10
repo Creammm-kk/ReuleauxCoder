@@ -26,7 +26,7 @@ from reuleauxcoder.extensions.remote_exec.protocol import TerminalCapabilities
 from reuleauxcoder.extensions.remote_exec.server import RelayServer
 from reuleauxcoder.extensions.skills.service import SkillsService
 from reuleauxcoder.extensions.tools.backend import ExecutionContext
-from reuleauxcoder.interfaces.cli.commands import handle_command
+from reuleauxcoder.app.commands.service import CommandService
 from reuleauxcoder.interfaces.cli.registration import REMOTE_CLI_PROFILE
 from reuleauxcoder.interfaces.cli.render import CLIRenderer
 from reuleauxcoder.interfaces.cli.interaction_presenter import (
@@ -167,6 +167,7 @@ def bind_remote_chat_handler(
     skills_service: SkillsService | None = getattr(agent, "skills_service", None)
     session_store = runner.dependencies.create_session_store(sessions_dir)
     peer_agents: dict[str, Agent] = {}
+    peer_commands: dict[str, CommandService] = {}
     peer_connection_markers: dict[str, str] = {}
     peer_presenters: dict[str, PeerPresentation] = {}
 
@@ -222,6 +223,7 @@ def bind_remote_chat_handler(
         return f"{getattr(peer, 'connected_at', 0):.6f}" if peer is not None else "0"
 
     def _dispose_peer(peer_id: str) -> None:
+        peer_commands.pop(peer_id, None)
         presenter = peer_presenters.pop(peer_id, None)
         if presenter is not None:
             presenter.renderer.close()
@@ -306,7 +308,9 @@ def bind_remote_chat_handler(
         fingerprint = _peer_fingerprint(peer_id)
         peer_agent.session_fingerprint = fingerprint
 
-        def _cache_created_agent(reason: str) -> Agent:
+        def _cache_created_agent(
+            reason: str, session_exit_time: str | None = None
+        ) -> Agent:
             bind_issue = bind_session_persistence(
                 peer_config,
                 peer_agent,
@@ -324,6 +328,16 @@ def bind_remote_chat_handler(
             peer_agents[peer_id] = peer_agent
             peer_connection_markers[peer_id] = marker
             peer_presenters[peer_id] = presentation
+            peer_commands[peer_id] = CommandService(
+                peer_agent,
+                peer_config,
+                presentation.ui_bus,
+                REMOTE_CLI_PROFILE,
+                action_registry,
+                sessions_dir=sessions_dir,
+                skills_service=skills_service,
+                session_exit_time=session_exit_time,
+            )
             peer_agent.lifecycle.runner_started(
                 metadata={"ui_bus": ui_bus, "peer_id": peer_id}
             )
@@ -380,7 +394,8 @@ def bind_remote_chat_handler(
             return _cache_created_agent(
                 "remote_restore_degraded"
                 if restore_issues or inventory_issues
-                else "remote_restore"
+                else "remote_restore",
+                session_exit_time=session_store.get_exit_time(loaded.messages),
             )
 
         new_session_id = session_store.generate_session_id()
@@ -503,6 +518,9 @@ def bind_remote_chat_handler(
         }
 
     def _save_peer_session_once(peer_agent: Agent, peer_id: str) -> dict | None:
+        commands = peer_commands.get(peer_id)
+        if commands is not None and commands.exit_saved_session_id is not None:
+            return None
         try:
             _save_peer_session(peer_agent, peer_id)
         except KeyboardInterrupt:
@@ -520,7 +538,11 @@ def bind_remote_chat_handler(
         chat_error: Exception | None = None
         response = ""
         try:
-            response = peer_agent.chat(prompt)
+            response = peer_agent.chat(
+                peer_commands[peer_id].prepare_chat_input(prompt)
+                if peer_id in peer_commands
+                else prompt
+            )
         except Exception as error:
             chat_error = error
         persistence_error = _save_peer_session_once(peer_agent, peer_id)
@@ -576,33 +598,19 @@ def bind_remote_chat_handler(
 
         if prompt.strip().startswith("/") and config is not None:
             try:
-                command_result = handle_command(
-                    prompt.strip(),
-                    peer_agent,
-                    config,
-                    getattr(peer_agent, "current_session_id", None),
-                    presentation.ui_bus,
-                    REMOTE_CLI_PROFILE,
-                    action_registry,
-                    sessions_dir,
-                    skills_service,
-                )
+                command_result = peer_commands[peer_id].submit(prompt.strip())
             except Exception as command_error:
                 _flush_output()
                 persistence_error = _save_peer_session_once(peer_agent, peer_id)
-                remote_session.append_event(
-                    "error", {"message": str(command_error)}
-                )
+                remote_session.append_event("error", {"message": str(command_error)})
                 if persistence_error is not None:
                     remote_session.append_event("error", persistence_error)
                 remote_session.append_event("chat_end", {"response": ""})
                 return
-            if command_result["action"] != "chat":
-                peer_agent.current_session_id = command_result["session_id"]
-
+            if command_result.control != "chat":
                 _flush_output()
 
-                if command_result["action"] == "exit":
+                if command_result.control == "exit":
                     remote_session.append_event(
                         "output",
                         {
@@ -683,9 +691,7 @@ def bind_remote_chat_handler(
                             and not cancelled,
                             cancelled=cancelled,
                             reason=(
-                                str(feedback)
-                                if isinstance(feedback, str)
-                                else reason
+                                str(feedback) if isinstance(feedback, str) else reason
                             ),
                             action=action,
                             selected_id=(
@@ -755,7 +761,11 @@ def bind_remote_chat_handler(
             result = ""
             chat_error: Exception | None = None
             try:
-                result = peer_agent.chat(prompt)
+                result = peer_agent.chat(
+                    peer_commands[peer_id].prepare_chat_input(prompt)
+                    if peer_id in peer_commands
+                    else prompt
+                )
             except Exception as error:
                 chat_error = error
             _flush_output()

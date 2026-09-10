@@ -53,7 +53,6 @@ class TriggerSpec:
 class CommandParseContext:
     """Parsing context for command-like triggers."""
 
-    current_session_id: str | None
     ui_profile: UIProfile
 
 

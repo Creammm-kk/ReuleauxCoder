@@ -6,7 +6,6 @@ This module handles CLI-specific concerns:
 - REPL loop
 """
 
-import signal
 import sys
 import time
 from pathlib import Path
@@ -14,7 +13,6 @@ from pathlib import Path
 from rich.console import Console
 from rich.text import Text
 
-from reuleauxcoder.app.runtime.approval_interaction import make_approval_handler
 from reuleauxcoder.interfaces.cli.args import parse_args
 from reuleauxcoder.interfaces.cli.registration import create_cli_registration
 from reuleauxcoder.interfaces.cli.render import CLIRenderer
@@ -23,8 +21,6 @@ from reuleauxcoder.interfaces.cli.output import CLIOutputCoordinator
 from reuleauxcoder.interfaces.cli.repl import run_repl
 from reuleauxcoder.interfaces.cli.theme import DEFAULT_CLI_THEME
 from reuleauxcoder.interfaces.entrypoint import AppRunner, AppOptions
-from reuleauxcoder.app.ui_events import AgentEventBridge
-from reuleauxcoder.interfaces.ui_registry import UIRegistry
 from reuleauxcoder.presentation.semantics import DisplayTone
 from reuleauxcoder.domain.context.manager import (
     has_cached_tiktoken_vocabulary,
@@ -34,28 +30,10 @@ from reuleauxcoder.services.config.loader import ExampleConfigError
 from reuleauxcoder.infrastructure.persistence.session_store import SessionRestoreError
 
 
-def _install_sigint_handler(agent):
-    """Install a SIGINT handler that sets the agent's cooperative-stop flag.
-
-    The handler sets ``agent.request_stop()`` so that the agent loop
-    exits cleanly at its next check point, *then* re-raises
-    ``KeyboardInterrupt`` to interrupt the currently-blocked operation
-    (streaming, subprocess, etc.) immediately.
-    """
-
-    def handler(signum, frame):
-        try:
-            agent.request_stop()
-        except Exception:
-            pass  # best-effort; the agent reference may be stale
-        raise KeyboardInterrupt
-
-    signal.signal(signal.SIGINT, handler)
-
-
-def _run_once(agent, prompt: str, output: CLIOutputCoordinator):
+def _run_once(runtime, prompt: str, output: CLIOutputCoordinator):
     """Run a single prompt and exit."""
-    agent.chat(prompt)
+    runtime.submit(prompt)
+    runtime.wait_idle(pump=output.drain)
     output.drain()
 
 
@@ -105,6 +83,11 @@ def main():
         else None
     )
 
+    if getattr(args, "rpc_stdio", False):
+        from reuleauxcoder.interfaces.entrypoint.rpc import run_stdio
+
+        return run_stdio(options)
+
     # Initialize application using shared entrypoint
     runner = None
     try:
@@ -137,208 +120,22 @@ def main():
             runner.cleanup()
         raise
 
-    ui_registry = UIRegistry([create_cli_registration(ctx.ui_bus)])
-    cli_ui = ui_registry.require("cli")
+    from reuleauxcoder.app.ui_events import UIEventBus
+    from reuleauxcoder.interfaces.entrypoint.rpc import connect_local
 
-    remote_exec = getattr(ctx.config, "remote_exec", None)
-    is_host_mode = remote_exec and remote_exec.enabled and remote_exec.host_mode
-    use_mini_tui = (
-        not args.prompt
-        and not args.server
-        and not is_host_mode
-        and sys.stdin.isatty()
-        and sys.stdout.isatty()
-    )
-
-    if use_mini_tui:
-        _terminal_status("Preparing terminal UI...", tone=DisplayTone.ACCENT)
-        from reuleauxcoder.app.runtime.approval import (
-            build_runtime_approval_provider,
-        )
-        from reuleauxcoder.app.runtime.interactions import InteractionCoordinator
-        from reuleauxcoder.extensions.command.builtin import (
-            create_builtin_command_panel_registry,
-        )
-        from reuleauxcoder.interfaces.tui import (
-            MiniTUIApplication,
-            MiniTUIEventAdapter,
-            MiniTUIInteractor,
-        )
-
-        event_adapter = MiniTUIEventAdapter(
+    remote_exec = ctx.config.remote_exec
+    host_mode = args.server or (remote_exec.enabled and remote_exec.host_mode)
+    frontend_bus = ctx.ui_bus if host_mode else UIEventBus()
+    cli_ui = create_cli_registration(frontend_bus)
+    if host_mode:
+        renderer = CLIRenderer(
+            view_registry=cli_ui.view_registry,
+            policy=PresentationPolicy.from_ui_config(ctx.config.ui),
             root_agent_id=ctx.agent.agent_id,
-            session_generation=ctx.agent.session_generation,
-            performance_monitor=getattr(ctx.agent, "performance_monitor", None),
-            incident_sink=getattr(ctx.agent, "record_runtime_issue", None),
         )
-        if ctx.current_session_id and ctx.agent.messages:
-            from reuleauxcoder.domain.session.models import Session
-
-            replay_session = Session(
-                id=ctx.current_session_id,
-                model=ctx.config.model,
-                saved_at="",
-                messages=list(ctx.agent.messages),
-            )
-            event_adapter.append_restored_conversation(
-                replay_session.get_recent_conversation(max_user_turns=3)
-            )
-        mini_interactor = MiniTUIInteractor(ctx.ui_bus)
-        interaction_coordinator = InteractionCoordinator(mini_interactor)
-        ctx.ui_interactor = interaction_coordinator
-        ctx.agent.ui_interactor = interaction_coordinator
-        ctx.agent.approval_provider = build_runtime_approval_provider(
-            ctx.agent, make_approval_handler(interaction_coordinator)
-        )
-        bridge = AgentEventBridge(
-            ctx.ui_bus,
-            generation_owner_agent_id=ctx.agent.agent_id,
-        )
-        ctx.agent.add_event_handler(bridge.on_agent_event)
-        startup_events = ctx.ui_bus.history_snapshot()
-        ctx.ui_bus.subscribe(event_adapter.on_ui_event, replay_history=False)
-        from reuleauxcoder.domain.runtime.events import (
-            PlanUpdated,
-            ProgressReported,
-            RuntimeEvent,
-        )
-
-        plan = ctx.agent.plan_controller.state
-        if plan.revision:
-            ctx.ui_bus.emit_runtime(
-                RuntimeEvent(
-                    payload=PlanUpdated(
-                        revision=plan.revision,
-                        items=tuple(
-                            {
-                                "step": item.step,
-                                "active_form": item.active_form,
-                                "status": item.status,
-                            }
-                            for item in plan.items
-                        ),
-                        explanation=plan.explanation,
-                    ),
-                    agent_id=ctx.agent.agent_id,
-                    session_generation=ctx.agent.session_generation,
-                    session_id=ctx.current_session_id,
-                )
-            )
-        progress = ctx.agent.plan_controller.progress
-        if progress.revision:
-            ctx.ui_bus.emit_runtime(
-                RuntimeEvent(
-                    payload=ProgressReported(
-                        revision=progress.revision,
-                        phase=progress.phase,
-                        summary=progress.summary,
-                        next=progress.next,
-                    ),
-                    agent_id=ctx.agent.agent_id,
-                    session_generation=ctx.agent.session_generation,
-                    session_id=ctx.current_session_id,
-                )
-            )
-        manager = getattr(ctx.agent, "_subagent_manager", None)
-        if manager is not None:
-            from reuleauxcoder.domain.agent.events import AgentEvent
-
-            for job in manager.list_jobs():
-                ctx.agent._emit_event(
-                    AgentEvent.subagent_completed(
-                        job_id=job.id,
-                        mode=job.mode,
-                        task=job.task,
-                        status=job.status,
-                        result=job.result,
-                        error=job.error,
-                    )
-                )
-
-        if not ctx.config.api_key:
-            ctx.ui_bus.error("No API key found in config.yaml.")
-            interaction_coordinator.shutdown()
-            runner.cleanup()
-            sys.exit(1)
-
-        application = MiniTUIApplication(
-            agent=ctx.agent,
-            config=ctx.config,
-            ui_bus=ctx.ui_bus,
-            ui_profile=cli_ui.profile,
-            action_registry=ctx.action_registry,
-            panel_registry=create_builtin_command_panel_registry(),
-            interactor=mini_interactor,
-            event_adapter=event_adapter,
-            current_session_id=ctx.current_session_id,
-            sessions_dir=ctx.sessions_dir,
-            session_exit_time=ctx.session_exit_time,
-            skills_service=ctx.skills_service,
-            startup_events=startup_events,
-            exit_progress=lambda message: _terminal_status(
-                message, tone=DisplayTone.MUTED
-            ),
-        )
-        _terminal_status("Starting terminal UI...", tone=DisplayTone.ACCENT)
-        try:
-            application.run()
-        finally:
-            _terminal_status("Terminal UI closed.", tone=DisplayTone.MUTED)
-            if application.exit_session_saved:
-                _terminal_status(
-                    f"Session saved: {application.saved_session_id or ctx.current_session_id}.",
-                    tone=DisplayTone.SUCCESS,
-                )
-            elif not ctx.config.session_auto_save:
-                _terminal_status(
-                    "Session autosave is disabled; no exit snapshot written.",
-                    tone=DisplayTone.WARNING,
-                )
-            elif not ctx.agent.messages:
-                _terminal_status("No conversation to save.", tone=DisplayTone.MUTED)
-            else:
-                _terminal_status(
-                    "No exit snapshot was written.", tone=DisplayTone.WARNING
-                )
-            try:
-                interaction_coordinator.shutdown()
-                runner.cleanup(
-                    progress=lambda message: _terminal_status(
-                        message, tone=DisplayTone.MUTED
-                    )
-                )
-            except Exception as error:
-                _terminal_status(
-                    "Background service cleanup failed: "
-                    f"{type(error).__name__}: {error}",
-                    tone=DisplayTone.ERROR,
-                )
-                raise
-            else:
-                _terminal_status("Exited.", tone=DisplayTone.SUCCESS)
-        return
-
-    renderer = CLIRenderer(
-        view_registry=cli_ui.view_registry,
-        policy=PresentationPolicy.from_ui_config(ctx.config.ui),
-        root_agent_id=ctx.agent.agent_id,
-    )
-    output = CLIOutputCoordinator(renderer)
-    group_startup = not args.prompt and not args.server and not is_host_mode
-    startup_events = (
-        tuple(
-            event
-            for event in ctx.ui_bus.history_snapshot()
-            if event.payload is None
-            and renderer.policy.should_render_notification(event.level.value)
-        )
-        if group_startup
-        else ()
-    )
-    ctx.ui_bus.subscribe(output.on_ui_event, replay_history=not group_startup)
-
-    if args.server or is_host_mode:
-        ctx.ui_bus.info("Remote relay host mode active. Press Ctrl+C to stop.")
+        output = CLIOutputCoordinator(renderer)
+        frontend_bus.subscribe(output.on_ui_event)
+        frontend_bus.info("Remote relay host mode active. Press Ctrl+C to stop.")
         try:
             while True:
                 time.sleep(0.1)
@@ -350,51 +147,83 @@ def main():
             runner.cleanup()
         return
 
-    ctx.ui_interactor = cli_ui.interactor
-    ctx.agent.ui_interactor = cli_ui.interactor
-    from reuleauxcoder.app.runtime.approval import build_runtime_approval_provider
-
-    ctx.agent.approval_provider = build_runtime_approval_provider(
-        ctx.agent, make_approval_handler(cli_ui.interactor)
-    )
-
-    # Add CLI renderer and bridge agent events onto the UI bus
-    bridge = AgentEventBridge(
-        ctx.ui_bus,
-        generation_owner_agent_id=ctx.agent.agent_id,
-    )
-    ctx.agent.add_event_handler(bridge.on_agent_event)
-
-    # Check for API key
-    if not ctx.config.api_key:
-        ctx.ui_bus.error("No API key found in config.yaml.")
-        output.close()
-        sys.exit(1)
-
+    use_tui = not args.prompt and sys.stdin.isatty() and sys.stdout.isatty()
+    connection = None
+    output = None
     try:
-        # One-shot mode
-        if args.prompt:
-            _run_once(ctx.agent, args.prompt, output)
-            return
+        if not ctx.config.api_key:
+            _terminal_status("No API key found in config.yaml.", tone=DisplayTone.ERROR)
+            return 1
+        if use_tui:
+            from reuleauxcoder.interfaces.tui import (
+                MiniTUIApplication,
+                MiniTUIEventAdapter,
+                MiniTUIInteractor,
+            )
 
-        # Interactive REPL mode
-        _install_sigint_handler(ctx.agent)
-        if ctx.action_registry is None or ctx.current_session_id is None:
-            raise RuntimeError("Interactive CLI runtime is missing command/session state")
-        run_repl(
-            ctx.agent,
-            ctx.config,
-            ctx.ui_bus,
-            cli_ui.profile,
-            ctx.action_registry,
-            ctx.current_session_id,
-            ctx.sessions_dir,
-            ctx.session_exit_time,
-            ctx.skills_service,
-            output,
-            cli_ui.interactor,
-            startup_events,
-        )
+            interactor = MiniTUIInteractor(frontend_bus)
+            connection = connect_local(ctx, cli_ui.profile, frontend_bus, interactor)
+            runtime = connection.client
+            event_adapter = MiniTUIEventAdapter(
+                root_agent_id=runtime.state.agent_id,
+                session_generation=runtime.state.session_generation,
+                incident_sink=runtime.report_runtime_issue,
+                performance_sink=runtime.record_performance,
+            )
+            frontend_bus.subscribe(event_adapter.on_ui_event)
+            info = runtime.info
+            event_adapter.append_restored_conversation(info["recent_conversation"])
+            if info["plan"] is not None:
+                event_adapter.restore_control_state(
+                    info["plan"], info["progress"], session_id=runtime.state.session_id
+                )
+            application = MiniTUIApplication(
+                runtime=runtime,
+                ui_bus=frontend_bus,
+                ui_profile=cli_ui.profile,
+                interactor=interactor,
+                event_adapter=event_adapter,
+                startup_events=info["startup_events"],
+            )
+            _terminal_status("Starting terminal UI...", tone=DisplayTone.ACCENT)
+            application.run()
+            if application.saved_session_id:
+                _terminal_status(
+                    f"Session saved: {application.saved_session_id}.",
+                    tone=DisplayTone.SUCCESS,
+                )
+        else:
+            connection = connect_local(
+                ctx,
+                cli_ui.profile,
+                frontend_bus,
+                cli_ui.interactor,
+                foreground_interactions=True,
+            )
+            runtime = connection.client
+            renderer = CLIRenderer(
+                view_registry=cli_ui.view_registry,
+                policy=PresentationPolicy.from_ui_config(ctx.config.ui),
+                root_agent_id=runtime.state.agent_id,
+            )
+            output = CLIOutputCoordinator(renderer)
+            frontend_bus.subscribe(output.on_ui_event)
+            if args.prompt:
+                _run_once(runtime, args.prompt, output)
+            else:
+                run_repl(
+                    runtime,
+                    frontend_bus,
+                    output,
+                    cli_ui.interactor,
+                    runtime.info["startup_events"],
+                )
     finally:
-        output.close()
-        runner.cleanup()
+        try:
+            if connection is not None:
+                connection.close()
+        finally:
+            if output is not None:
+                output.close()
+            cli_ui.interactor.shutdown()
+            runner.cleanup()

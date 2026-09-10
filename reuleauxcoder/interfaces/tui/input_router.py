@@ -52,13 +52,13 @@ def build_key_bindings(host) -> KeyBindings:
             host.exit_confirm = False
             return
         if host.running:
-            if host.agent.stop_requested():
+            if host.runtime.state.stopping:
                 host._prepare_forced_exit("forced CLI exit during active turn")
                 host._closed = True
                 event.app.exit()
             else:
-                result = host.agent.request_interrupt_intent()
-                outcome = getattr(result.outcome, "value", result.outcome)
+                result = host.runtime.interrupt()
+                outcome = result["outcome"]
                 if outcome == "promoted":
                     host.cancelling = False
                     host.round_interrupt_applying = False
@@ -72,7 +72,7 @@ def build_key_bindings(host) -> KeyBindings:
                 queued_steering = host._queued_steering()
                 queued_commands = host._queued_commands()
                 discarded_steering = int(
-                    getattr(result, "discarded_count", 0) or 0
+                    result["discarded_count"]
                 )
                 if queued_commands and queued_steering:
                     message = (

@@ -14,9 +14,9 @@ from reuleauxcoder.app.commands.panels import (
     PanelRefreshPolicy,
 )
 from reuleauxcoder.app.commands.registry import ActionRegistry
+from reuleauxcoder.app.commands.requests import ActionRequest
 from reuleauxcoder.app.commands.shared import (
     EmptyCommand,
-    TEXT_REQUIRED,
     UI_TARGETS,
     slash_trigger,
 )
@@ -204,7 +204,9 @@ def command_panel_spec() -> CommandPanelSpec:
                 PanelItem(
                     label=level.label,
                     description=f"→ {level.api_value} via {model.param}",
-                    command=f"/thinking effort {level.label}",
+                    action=ActionRequest(
+                        "thinking.set_effort", SetEffortCommand(level.label)
+                    ),
                     current=level.label == model.current,
                 )
                 for level in model.levels
@@ -224,10 +226,10 @@ def register_actions(registry: ActionRegistry) -> None:
         [
             ActionSpec(
                 action_id="thinking.show",
+                command_type=EmptyCommand,
                 feature_id="thinking",
                 description="[session] Show reasoning content from the last turn",
                 ui_targets=UI_TARGETS,
-                required_capabilities=TEXT_REQUIRED,
                 triggers=(slash_trigger("/thinking"),),
                 parser=_parse_show,
                 handler=_handle_show,
@@ -235,10 +237,11 @@ def register_actions(registry: ActionRegistry) -> None:
             ),
             ActionSpec(
                 action_id="thinking.toggle_inline",
+                command_type=ToggleInlineCommand,
+                audit="runtime_config_changed",
                 feature_id="thinking",
                 description="[session] Toggle inline streaming of reasoning content",
                 ui_targets=UI_TARGETS,
-                required_capabilities=TEXT_REQUIRED,
                 triggers=(slash_trigger("/thinking inline"),),
                 parser=_parse_inline,
                 handler=_handle_inline,
@@ -246,10 +249,10 @@ def register_actions(registry: ActionRegistry) -> None:
             ),
             ActionSpec(
                 action_id="thinking.show_effort",
+                command_type=EmptyCommand,
                 feature_id="thinking",
                 description="Show current reasoning effort budget",
                 ui_targets=UI_TARGETS,
-                required_capabilities=TEXT_REQUIRED,
                 triggers=(slash_trigger("/thinking effort"),),
                 parser=_parse_effort_show,
                 handler=_handle_effort_show,
@@ -257,10 +260,11 @@ def register_actions(registry: ActionRegistry) -> None:
             ),
             ActionSpec(
                 action_id="thinking.set_effort",
+                command_type=SetEffortCommand,
+                audit="runtime_config_changed",
                 feature_id="thinking",
                 description="[session] Set reasoning effort (low/medium/high)",
                 ui_targets=UI_TARGETS,
-                required_capabilities=TEXT_REQUIRED,
                 triggers=(slash_trigger("/thinking effort {level}"),),
                 parser=_parse_effort_set,
                 handler=_handle_effort_set,

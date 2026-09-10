@@ -4,8 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from reuleauxcoder.app.commands.registry import ActionRegistry
-from reuleauxcoder.app.commands.specs import TriggerKind
+from reuleauxcoder.app.commands.specs import ActionCatalog, TriggerKind
 from reuleauxcoder.app.commands.capabilities import UIProfile
 
 
@@ -38,7 +37,7 @@ def _strip_placeholders(template: str) -> tuple[str, bool]:
 
 
 def build_popup_entries(
-    registry: ActionRegistry, ui_profile: UIProfile
+    registry: ActionCatalog, ui_profile: UIProfile
 ) -> tuple[PopupEntry, ...]:
     """Collect deduplicated slash candidates for the popup.
 

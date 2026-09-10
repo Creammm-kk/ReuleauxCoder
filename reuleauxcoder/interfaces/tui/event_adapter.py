@@ -10,7 +10,6 @@ from typing import Callable
 from prompt_toolkit.formatted_text import FormattedText
 
 from reuleauxcoder.app.commands.view_models import SessionResumeViewModel
-from reuleauxcoder.domain.runtime.performance import RuntimePerformanceMonitor
 from reuleauxcoder.domain.runtime.events import (
     ApprovalRequested,
     ApprovalResolved,
@@ -163,7 +162,7 @@ class MiniTUIEventAdapter:
         *,
         root_agent_id: str | None = None,
         session_generation: int | None = None,
-        performance_monitor: RuntimePerformanceMonitor | None = None,
+        performance_sink: Callable[..., object] | None = None,
         incident_sink: RuntimeIssueSink | None = None,
         event_queue_capacity: int = DEFAULT_EVENT_QUEUE_CAPACITY,
         event_queue_control_reserve: int = DEFAULT_CONTROL_RESERVE,
@@ -182,7 +181,7 @@ class MiniTUIEventAdapter:
         self._generation_lock = threading.Lock()
         self._active_generation = session_generation
         self._stale_incident_dropped = 0
-        self._performance_monitor = performance_monitor
+        self._performance_sink = performance_sink
         self._incident_sink = incident_sink
         self._queue_sample_lock = threading.Lock()
         self._last_queue_sample_at = 0.0
@@ -364,8 +363,8 @@ class MiniTUIEventAdapter:
                     and self._resize_target[0] == observation.generation
                 ):
                     self._resize_target = None
-        monitor = self._performance_monitor
-        if monitor is None:
+        record = self._performance_sink
+        if record is None:
             return
         try:
             attributes: dict[str, int | str] = {
@@ -379,7 +378,7 @@ class MiniTUIEventAdapter:
             }
             if observation.error_type is not None:
                 attributes["error_type"] = observation.error_type
-            monitor.record(
+            record(
                 "tui_cache",
                 "resize_prewarm",
                 observation.elapsed_ms,
@@ -498,8 +497,8 @@ class MiniTUIEventAdapter:
         failure_reason: EventPutFailureReason | None = None,
         force: bool = False,
     ) -> None:
-        monitor = self._performance_monitor
-        if monitor is None:
+        record = self._performance_sink
+        if record is None:
             return
         try:
             observed_at = time.monotonic()
@@ -528,7 +527,7 @@ class MiniTUIEventAdapter:
                 attributes["batch_size"] = batch_size
             if failure_reason is not None:
                 attributes["failure_reason"] = failure_reason.value
-            monitor.record(
+            record(
                 "ui_queue",
                 name,
                 elapsed_ms,

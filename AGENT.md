@@ -125,7 +125,11 @@ Current CLI behavior:
 
 ## Commands and interactions
 
-`app/commands/` contains the registry, parser, help generation, typed effects and shared view models. Built-ins expose explicit `register_actions` and optional `command_panel_spec` contributions under `extensions/command/builtin/`. The single `_BUILTIN_COMMAND_FEATURES` catalog pairs each feature's actions with its panel; the action loader and panel registry derive their stable order from that catalog. Keep command-specific interaction definitions in their feature modules and framework-specific rendering, focus and keyboard handling in interface adapters.
+`app/commands/service.py` owns command execution, capability checks, during-turn queues, auditing, session transitions, resume markers and exit snapshots. `app/rpc/server.py` owns chat workers, admission, interruption and interaction lifecycle; CLI/TUI adapters use `RuntimeClient` for both chat and commands. Slash input and typed `ActionRequest` submissions share this boundary. Session identity is read from the agent at execution time; frontends retain only revisioned backend snapshots.
+
+Built-ins expose explicit `register_actions` and optional `command_panel_spec` contributions under `extensions/command/builtin/`. Each feature owns its parsers, parameter dataclasses, handlers, audit declarations and panel builders. The single `_BUILTIN_COMMAND_FEATURES` catalog pairs actions with panels. The service exposes a metadata-only `ActionCatalog` and immutable `PanelPresentation` data. Panel rows carry typed action requests; selection must not write slash text into the chat buffer. Frontends own cursor, filtering, focus, keyboard handling and framework-specific rendering.
+
+`app/ui_events.py` and `app/interaction_contracts.py` own the shared output and request/response contracts. Frontends implement the interaction port; command features must not import interface modules. `infrastructure/rpc` provides bidirectional JSON-RPC 2.0 over complete-message transports. Local CLI/TUI use paired memory transports with real JSON serialization; `rcoder --rpc-stdio` runs the same backend across stdin/stdout. Protocol details and the VS Code Remote attachment model are in `references/reuleauxcoder-rpc-boundary.md`.
 
 Command effects and UI view events derive their view type from the ViewModel. Pass the model to `open_view` or `refresh_view`; do not maintain a separate copy of its type in the request.
 

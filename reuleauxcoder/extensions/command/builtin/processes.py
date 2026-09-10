@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from reuleauxcoder.app.commands.process_views import ProcessRowViewModel, ProcessSessionsViewModel
+
 from dataclasses import dataclass
 
 from reuleauxcoder.app.commands.matchers import match_template
@@ -12,8 +14,8 @@ from reuleauxcoder.app.commands.panels import (
     PanelItem,
 )
 from reuleauxcoder.app.commands.registry import ActionRegistry
+from reuleauxcoder.app.commands.requests import ActionRequest
 from reuleauxcoder.app.commands.shared import (
-    TEXT_REQUIRED,
     UI_TARGETS,
     slash_trigger,
 )
@@ -46,47 +48,6 @@ class ControlProcessCommand:
 @dataclass(frozen=True, slots=True)
 class SecureProcessInputCommand:
     session_id: str
-
-
-@dataclass(frozen=True, slots=True)
-class ProcessRowViewModel:
-    session_id: str
-    command: str
-    cwd: str
-    state: str
-    stream_mode: str
-    backend: str
-    elapsed_seconds: float
-    exit_code: int | None
-    termination_reason: str | None
-    output_truncated: bool
-    output_decode_replaced: bool
-
-
-@dataclass(frozen=True, slots=True)
-class ProcessSessionsViewModel:
-    sessions: tuple[ProcessRowViewModel, ...]
-    view_type: str = "process_sessions"
-
-    def to_payload(self) -> dict[str, object]:
-        return {
-            "sessions": [
-                {
-                    "session_id": session.session_id,
-                    "command": session.command,
-                    "cwd": session.cwd,
-                    "state": session.state,
-                    "stream_mode": session.stream_mode,
-                    "backend": session.backend,
-                    "elapsed_seconds": session.elapsed_seconds,
-                    "exit_code": session.exit_code,
-                    "termination_reason": session.termination_reason,
-                    "output_truncated": session.output_truncated,
-                    "output_decode_replaced": session.output_decode_replaced,
-                }
-                for session in self.sessions
-            ]
-        }
 
 
 def _parse_list(user_input: str, parse_ctx):
@@ -431,7 +392,7 @@ def command_panel_spec() -> CommandPanelSpec:
                     f"{session.state} · {session.backend}/{session.stream_mode} · "
                     f"{session.elapsed_seconds:.1f}s · {_single_line(session.command)}"
                 ),
-                command="",
+                action=None,
                 current=session.state != "exited",
             )
             for session in model.sessions
@@ -439,7 +400,7 @@ def command_panel_spec() -> CommandPanelSpec:
             PanelItem(
                 label="(no process sessions)",
                 description="long-running shell calls will appear here",
-                command="",
+                action=None,
             ),
         )
         children: list[tuple[str, PanelDefinition]] = []
@@ -448,7 +409,10 @@ def command_panel_spec() -> CommandPanelSpec:
                 PanelItem(
                     label="poll output",
                     description="read new output and latest process facts",
-                    command=f"/ps poll {session.session_id}",
+                    action=ActionRequest(
+                        "processes.control",
+                        ControlProcessCommand("poll", session.session_id),
+                    ),
                 )
             ]
             if session.state != "exited":
@@ -457,7 +421,10 @@ def command_panel_spec() -> CommandPanelSpec:
                         PanelItem(
                             label="send hidden input",
                             description="write one masked line directly to the PTY",
-                            command=f"/ps input {session.session_id}",
+                            action=ActionRequest(
+                                "processes.secure_input",
+                                SecureProcessInputCommand(session.session_id),
+                            ),
                         )
                     )
                 actions.extend(
@@ -465,12 +432,18 @@ def command_panel_spec() -> CommandPanelSpec:
                         PanelItem(
                             label="interrupt",
                             description="send a soft interrupt",
-                            command=f"/ps interrupt {session.session_id}",
+                            action=ActionRequest(
+                                "processes.control",
+                                ControlProcessCommand("interrupt", session.session_id),
+                            ),
                         ),
                         PanelItem(
                             label="terminate",
                             description="stop the process tree",
-                            command=f"/ps terminate {session.session_id}",
+                            action=ActionRequest(
+                                "processes.control",
+                                ControlProcessCommand("terminate", session.session_id),
+                            ),
                         ),
                     )
                 )
@@ -505,10 +478,10 @@ def register_actions(registry: ActionRegistry) -> None:
         [
             ActionSpec(
                 action_id="processes.list",
+                command_type=ListProcessesCommand,
                 feature_id="processes",
                 description="[session] Browse running and retained shell process sessions",
                 ui_targets=UI_TARGETS,
-                required_capabilities=TEXT_REQUIRED,
                 triggers=(
                     slash_trigger("/ps"),
                     slash_trigger("/processes"),
@@ -520,10 +493,10 @@ def register_actions(registry: ActionRegistry) -> None:
             ),
             ActionSpec(
                 action_id="processes.control",
+                command_type=ControlProcessCommand,
                 feature_id="processes",
                 description="[session] Poll, interrupt, or terminate a shell process session",
                 ui_targets=UI_TARGETS,
-                required_capabilities=TEXT_REQUIRED,
                 triggers=(
                     slash_trigger("/ps poll <id>"),
                     slash_trigger("/ps interrupt <id>"),
@@ -536,11 +509,11 @@ def register_actions(registry: ActionRegistry) -> None:
             ),
             ActionSpec(
                 action_id="processes.secure_input",
+                command_type=SecureProcessInputCommand,
                 feature_id="processes",
                 description="[session] Send one masked line directly to a PTY session",
                 ui_targets=UI_TARGETS,
-                required_capabilities=TEXT_REQUIRED
-                | {UICapability.SECURE_TEXT_INPUT},
+                required_capabilities=frozenset({UICapability.SECURE_TEXT_INPUT}),
                 triggers=(slash_trigger("/ps input <id>"),),
                 parser=_parse_secure_input,
                 handler=_handle_secure_input,

@@ -8,7 +8,7 @@ from reuleauxcoder.app.commands.models import (
 from reuleauxcoder.app.commands.view_models import HelpViewModel
 from reuleauxcoder.app.commands.registry import ActionRegistry
 from reuleauxcoder.app.commands.specs import ActionSpec
-from reuleauxcoder.interfaces.cli.commands import _apply_command_effect
+from reuleauxcoder.app.commands.service import apply_command_effect
 from reuleauxcoder.app.ui_events import UIEventBus
 
 
@@ -54,7 +54,7 @@ def test_cli_applies_command_effect_once(action, title, expected_title, focus) -
     result.finish()
     bus = UIEventBus()
 
-    _apply_command_effect(result, bus)
+    apply_command_effect(result, bus)
 
     notice, view_event = bus.history_snapshot()
     assert notice.message == "hello"

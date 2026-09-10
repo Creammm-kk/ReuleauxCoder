@@ -18,9 +18,9 @@ from reuleauxcoder.app.commands.panels import (
     PanelRefreshPolicy,
 )
 from reuleauxcoder.app.commands.registry import ActionRegistry
+from reuleauxcoder.app.commands.requests import ActionRequest
 from reuleauxcoder.app.commands.shared import (
     EmptyCommand,
-    TEXT_REQUIRED,
     UI_TARGETS,
     non_empty_text,
     slash_trigger,
@@ -329,6 +329,12 @@ def _build_model_profiles_view(
 
 def command_panel_spec() -> CommandPanelSpec:
     """Contribute the two-level model routing picker with canonical commands."""
+    command_types = {
+        "use-main": UseMainModelCommand,
+        "use-sub": UseSubModelCommand,
+        "set-main": SetMainModelCommand,
+        "set-sub": SetSubModelCommand,
+    }
     slots = (
         ("Session · Main model", "use-main"),
         ("Session · Sub-agent model", "use-sub"),
@@ -356,7 +362,10 @@ def command_panel_spec() -> CommandPanelSpec:
                             description=(
                                 f"{profile.model} · ctx {profile.max_context_tokens}"
                             ),
-                            command=f"/model {slot} {profile.name}",
+                            action=ActionRequest(
+                                f"model.{slot.replace('-', '_')}",
+                                command_types[slot](profile.name),
+                            ),
                             current=(
                                 profile.active_main
                                 if slot.endswith("main")
@@ -376,7 +385,7 @@ def command_panel_spec() -> CommandPanelSpec:
                 PanelItem(
                     label=label,
                     description=active_by_slot[slot] or "(none)",
-                    command="",
+                    action=None,
                 )
                 for label, slot in slots
             ),
@@ -396,10 +405,10 @@ def register_actions(registry: ActionRegistry) -> None:
         [
             ActionSpec(
                 action_id="model.show",
+                command_type=EmptyCommand,
                 feature_id="model",
                 description="Show model profiles and current session/global routing",
                 ui_targets=UI_TARGETS,
-                required_capabilities=TEXT_REQUIRED,
                 triggers=(slash_trigger("/model"),),
                 parser=_parse_show_model,
                 handler=_handle_show_model,
@@ -407,50 +416,55 @@ def register_actions(registry: ActionRegistry) -> None:
             ),
             ActionSpec(
                 action_id="model.use_main",
+                command_type=UseMainModelCommand,
+                audit="runtime_config_changed",
                 feature_id="model",
                 description="[session] Use a session main model profile",
                 ui_targets=UI_TARGETS,
-                required_capabilities=TEXT_REQUIRED,
                 triggers=(slash_trigger("/model use-main <profile>"),),
                 parser=_parse_use_main_model,
                 handler=_handle_use_main_model,
             ),
             ActionSpec(
                 action_id="model.use_sub",
+                command_type=UseSubModelCommand,
+                audit="runtime_config_changed",
                 feature_id="model",
                 description="[session] Use a session sub-agent model profile",
                 ui_targets=UI_TARGETS,
-                required_capabilities=TEXT_REQUIRED,
                 triggers=(slash_trigger("/model use-sub <profile>"),),
                 parser=_parse_use_sub_model,
                 handler=_handle_use_sub_model,
             ),
             ActionSpec(
                 action_id="model.set_main",
+                command_type=SetMainModelCommand,
+                audit="runtime_config_changed",
                 feature_id="model",
                 description="[global] Set the global default main model profile",
                 ui_targets=UI_TARGETS,
-                required_capabilities=TEXT_REQUIRED,
                 triggers=(slash_trigger("/model set-main <profile>"),),
                 parser=_parse_set_main_model,
                 handler=_handle_set_main_model,
             ),
             ActionSpec(
                 action_id="model.set_sub",
+                command_type=SetSubModelCommand,
+                audit="runtime_config_changed",
                 feature_id="model",
                 description="[global] Set the global default sub-agent model profile",
                 ui_targets=UI_TARGETS,
-                required_capabilities=TEXT_REQUIRED,
                 triggers=(slash_trigger("/model set-sub <profile>"),),
                 parser=_parse_set_sub_model,
                 handler=_handle_set_sub_model,
             ),
             ActionSpec(
                 action_id="model.switch",
+                command_type=SwitchModelCommand,
+                audit="runtime_config_changed",
                 feature_id="model",
                 description="[session] Switch the session main model profile",
                 ui_targets=UI_TARGETS,
-                required_capabilities=TEXT_REQUIRED,
                 triggers=(slash_trigger("/model <profile>"),),
                 parser=_parse_switch_model,
                 handler=_handle_switch_model,

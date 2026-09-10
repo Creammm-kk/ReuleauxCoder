@@ -7,11 +7,13 @@ from collections.abc import Callable
 from prompt_toolkit.formatted_text import FormattedText
 
 from reuleauxcoder.app.commands.panels import (
-    CommandPanelRegistry,
+    PanelPresentation,
     PanelItem,
     PanelRefreshPolicy,
 )
 from reuleauxcoder.interfaces.tui.selection_panel import SelectionPanel
+from reuleauxcoder.app.commands.requests import ActionRequest
+from reuleauxcoder.app.ui_events import ViewEventPayload
 
 
 class SelectionHost:
@@ -20,14 +22,14 @@ class SelectionHost:
     def __init__(
         self,
         *,
-        registry: CommandPanelRegistry,
+        build_panel: Callable[[ViewEventPayload], PanelPresentation | None],
         input_text: Callable[[], str],
-        submit_command: Callable[[str], None],
+        submit_action: Callable[[ActionRequest], None],
         invalidate: Callable[[], None],
     ) -> None:
-        self.registry = registry
+        self._build_panel = build_panel
         self._input_text = input_text
-        self._submit_command = submit_command
+        self._submit_action = submit_action
         self._invalidate = invalidate
         self.selection: SelectionPanel | None = None
         self.stack: list[SelectionPanel] = []
@@ -43,17 +45,15 @@ class SelectionHost:
 
     def open_view(self, payload) -> bool:
         """Claim a command-owned view as a modal panel or absorb its refresh."""
-        spec = self.registry.get(payload.view_type)
-        if spec is None:
+        presentation = self._build_panel(payload)
+        if presentation is None:
             return False
-        definition = spec.build_for(payload.view_model, payload.title)
-        if definition is None:
-            return False
+        definition = presentation.definition
 
         is_refresh = payload.action == "refresh" or not payload.focus
         if is_refresh:
             if (
-                spec.refresh is PanelRefreshPolicy.UPDATE
+                presentation.refresh is PanelRefreshPolicy.UPDATE
                 and self.selection is not None
                 and self.selection.definition.view_type == definition.view_type
             ):
@@ -118,7 +118,7 @@ class SelectionHost:
             self.selection = SelectionPanel.from_definition(child)
             self._invalidate()
             return
-        if not selected.command:
+        if selected.action is None:
             return
         if not panel.definition.keep_open_on_submit:
             if panel.definition.return_to_parent_on_submit:
@@ -126,7 +126,7 @@ class SelectionHost:
             else:
                 self.selection = None
                 self.stack = []
-        self._submit_command(selected.command)
+        self._submit_action(selected.action)
 
     def text(self) -> FormattedText:
         panel = self.selection

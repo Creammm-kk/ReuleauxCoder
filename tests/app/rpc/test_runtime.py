@@ -1,0 +1,252 @@
+import threading
+import pytest
+
+from reuleauxcoder.app.commands.requests import ActionRequest
+from reuleauxcoder.app.interaction_contracts import ConfirmRequest, InputTextRequest
+from reuleauxcoder.app.rpc.codec import encode, decode
+from reuleauxcoder.app.ui_events import UIEvent
+from reuleauxcoder.extensions.command.builtin.thinking import SetEffortCommand
+from reuleauxcoder.infrastructure.rpc.peer import RpcError
+
+
+def test_chat_and_all_builtin_views_use_serialized_events(runtime, caplog):
+    runtime.client.submit("hello")
+    runtime.client.wait_idle()
+    assert runtime.agent.messages[-1]["content"] == "hello"
+    for text in (
+        "/help",
+        "/model",
+        "/mode",
+        "/approval",
+        "/skills",
+        "/mcp",
+        "/agents",
+        "/ps",
+        "/thinking",
+        "/session",
+        "/config",
+        "/status perf",
+        "/tokens",
+    ):
+        runtime.client.submit(text)
+        runtime.client.wait_idle()
+    assert not [record for record in caplog.records if record.levelname == "ERROR"]
+    assert any(event.kind.value == "view" for event in runtime.bus.history_snapshot())
+    assert runtime.client.state.session_id == "test-session"
+
+
+def test_panel_action_parameters_round_trip_without_importing_handlers(runtime):
+    runtime.client.submit(
+        ActionRequest("thinking.set_effort", SetEffortCommand("high"))
+    )
+    runtime.client.wait_idle()
+    assert runtime.agent.llm.reasoning_effort == "high"
+    assert decode(
+        encode(ActionRequest("thinking.set_effort", SetEffortCommand("low")))
+    ).command == {"level": "low"}
+
+
+def test_backend_queues_commands_and_drains_at_turn_completion(runtime):
+    entered, release = threading.Event(), threading.Event()
+    runtime.loop.run = lambda: (entered.set(), release.wait(2), "done")[-1]
+    runtime.client.submit("chat")
+    assert entered.wait(2)
+    try:
+        admission = runtime.client.submit("/reset")
+        assert admission.status == "queued"
+        assert runtime.client.state.queued_commands == ("/reset",)
+        runtime.client.submit("/help")
+    finally:
+        release.set()
+    runtime.client.wait_idle()
+    assert runtime.client.state.queued_commands == ()
+    assert runtime.agent.messages == []
+
+
+def test_bidirectional_interaction_does_not_block_request_receiver(runtime):
+    entered, release = threading.Event(), threading.Event()
+    requests = []
+
+    def confirm(request):
+        requests.append(request)
+        entered.set()
+        assert release.wait(2)
+        from reuleauxcoder.app.interaction_contracts import ConfirmResponse
+
+        return ConfirmResponse(True)
+
+    runtime.interactor.confirm = confirm
+    runtime.loop.run = lambda: str(
+        runtime.agent.ui_interactor.confirm(ConfirmRequest("Confirm", "Continue?"))
+    )
+    runtime.client.submit("ask")
+    assert entered.wait(2)
+    try:
+        runtime.client.refresh()
+        assert runtime.client.state.running
+    finally:
+        release.set()
+    runtime.client.wait_idle()
+    assert requests[0].message == "Continue?"
+
+
+def test_backend_owns_interrupt_and_stop_state(runtime):
+    entered = threading.Event()
+
+    def run():
+        entered.set()
+        assert runtime.agent._stop_event.wait(2)
+        return "stopped"
+
+    runtime.loop.run = run
+    runtime.client.submit("work")
+    assert entered.wait(2)
+    assert runtime.client.interrupt()["outcome"] == "stop_requested"
+    runtime.client.wait_idle()
+    assert runtime.agent.stop_requested()
+
+
+def test_user_metadata_cannot_be_decoded_as_a_contract():
+    original = UIEvent.info(
+        "data", arbitrary={"$type": "ActionRequest", "fields": {"x": 1}}
+    )
+    assert decode(encode(original)) == original
+
+
+def test_wire_deadlines_are_rebased_at_the_receiving_process(runtime):
+    import time
+
+    deadlines = []
+    from reuleauxcoder.app.interaction_contracts import InputTextResponse
+
+    runtime.interactor.input_text = lambda request: (
+        deadlines.append(request.deadline),
+        InputTextResponse("ok"),
+    )[1]
+    result = runtime.server.interactions.input_text(
+        InputTextRequest("Text", "Value", deadline=time.monotonic() + 10)
+    )
+    assert result.value == "ok"
+    assert 0 < deadlines[0] - time.monotonic() <= 10
+
+
+def test_operation_failure_preserves_input_and_reaches_caller(runtime, caplog):
+    def fail():
+        raise RuntimeError("test failure with content")
+
+    runtime.loop.run = fail
+    runtime.client.submit("retain this input")
+    with pytest.raises(RpcError, match="test failure with content"):
+        runtime.client.wait_idle()
+    assert runtime.agent.messages[-1]["content"] == "retain this input"
+    assert "Runtime operation failed" in caplog.text
+    assert not runtime.client.state.running
+
+
+def test_invalid_wire_action_does_not_start_an_operation(runtime):
+    with pytest.raises(RpcError) as error:
+        runtime.client.submit(ActionRequest("thinking.set_effort", {"level": []}))
+    assert error.value.code == -32602
+    assert not runtime.client.state.running
+
+
+def test_new_input_clears_previous_stop_in_backend(runtime):
+    runtime.agent.request_stop()
+    runtime.client.submit("/help")
+    runtime.client.wait_idle()
+    assert not runtime.agent.stop_requested()
+
+
+def test_resize_is_scoped_by_backend_session(runtime):
+    from types import SimpleNamespace
+
+    calls = []
+    done = threading.Event()
+    runtime.agent.process_manager = SimpleNamespace(
+        resize_tty_sessions=lambda **kwargs: (calls.append(kwargs), done.set())
+    )
+    runtime.client.resize(24, 80)
+    assert done.wait(2)
+    assert calls == [
+        dict(
+            rows=24,
+            columns=80,
+            agent_id=runtime.agent.agent_id,
+            owner_session_id="test-session",
+            session_generation=runtime.agent.session_generation,
+        )
+    ]
+
+
+def test_shutdown_is_idempotent(runtime):
+    runtime.client.submit("retain this")
+    runtime.client.wait_idle()
+    first = runtime.client.shutdown()
+    messages = list(runtime.agent.messages)
+    assert runtime.client.shutdown() == first
+    assert runtime.agent.messages == messages
+
+
+def test_shutdown_cancels_an_interaction_before_cli_pumps_it(runtime):
+    runtime.client._foreground_interactions = True
+    responses = []
+    runtime.loop.run = lambda: responses.append(
+        runtime.agent.ui_interactor.confirm(ConfirmRequest("Confirm", "Pending"))
+    )
+    runtime.client.submit("ask")
+    # A queued prompt has no active terminal adapter yet.
+    _, _, future = runtime.client._interaction_queue.get(timeout=2)
+    runtime.client.shutdown()
+    assert future.result(timeout=2).cancelled
+    assert responses[0].cancelled
+
+
+def test_cli_pumps_reverse_interactions_on_its_own_thread(runtime):
+    runtime.client._foreground_interactions = True
+    threads = []
+    from reuleauxcoder.app.interaction_contracts import ConfirmResponse
+
+    runtime.interactor.confirm = lambda request: (
+        threads.append(threading.get_ident()),
+        ConfirmResponse(True),
+    )[1]
+    runtime.loop.run = lambda: runtime.agent.ui_interactor.confirm(
+        ConfirmRequest("Confirm", "Question")
+    )
+    runtime.client.submit("ask")
+    runtime.client.wait_idle()
+    assert threads == [threading.get_ident()]
+
+
+def test_shutdown_saves_retained_content_after_runtime_failure(runtime):
+    from reuleauxcoder.infrastructure.persistence.session_store import SessionStore
+
+    runtime.config.session_auto_save = True
+
+    def fail():
+        raise ValueError("deliberate test failure")
+
+    runtime.loop.run = fail
+    runtime.client.submit("persist this input")
+    with pytest.raises(RpcError):
+        runtime.client.wait_idle()
+    saved_id = runtime.client.shutdown()
+    session = SessionStore(runtime.server.commands.sessions_dir).load(saved_id)
+    assert any(
+        message.get("content") == "persist this input" for message in session.messages
+    )
+
+
+def test_frontend_performance_samples_reach_backend_monitor(runtime):
+    from reuleauxcoder.domain.runtime.performance import RuntimePerformanceMonitor
+
+    monitor = runtime.agent.performance_monitor = RuntimePerformanceMonitor()
+    recorded = threading.Event()
+    original = monitor.record
+    monitor.record = lambda *args, **kwargs: (
+        original(*args, **kwargs),
+        recorded.set(),
+    )[0]
+    runtime.client.record_performance("ui_queue", "drain", 3.5, attributes={"depth": 2})
+    assert recorded.wait(2)
+    assert monitor.snapshot()[0].attribute_map()["depth"] == 2

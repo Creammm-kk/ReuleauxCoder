@@ -13,9 +13,9 @@ from reuleauxcoder.app.commands.panels import (
 )
 from reuleauxcoder.app.commands.params import ParamParseError
 from reuleauxcoder.app.commands.registry import ActionRegistry
+from reuleauxcoder.app.commands.requests import ActionRequest
 from reuleauxcoder.app.commands.shared import (
     EmptyCommand,
-    TEXT_REQUIRED,
     UI_TARGETS,
     non_empty_text,
     slash_trigger,
@@ -160,8 +160,9 @@ def command_panel_spec() -> CommandPanelSpec:
                         else ""
                     )
                 ),
-                command=(
-                    f"/mcp {'disable' if server.enabled else 'enable'} {server.name}"
+                action=ActionRequest(
+                    "mcp.disable" if server.enabled else "mcp.enable",
+                    ToggleMCPServerCommand(server.name, not server.enabled),
                 ),
                 current=server.enabled,
             )
@@ -170,7 +171,7 @@ def command_panel_spec() -> CommandPanelSpec:
             PanelItem(
                 label="(no MCP servers configured)",
                 description="add servers under mcp.servers in config.yaml",
-                command="",
+                action=None,
             ),
         )
         return PanelDefinition(
@@ -188,10 +189,10 @@ def register_actions(registry: ActionRegistry) -> None:
         [
             ActionSpec(
                 action_id="mcp.show",
+                command_type=EmptyCommand,
                 feature_id="mcp",
                 description="[global][local-only] Show MCP servers and runtime connection state",
                 ui_targets=UI_TARGETS,
-                required_capabilities=TEXT_REQUIRED,
                 triggers=(slash_trigger("/mcp show"),),
                 parser=_parse_show_mcp,
                 handler=_handle_show_mcp_servers,
@@ -199,20 +200,22 @@ def register_actions(registry: ActionRegistry) -> None:
             ),
             ActionSpec(
                 action_id="mcp.enable",
+                command_type=ToggleMCPServerCommand,
+                audit="runtime_config_changed",
                 feature_id="mcp",
                 description="[global][local-only] Enable an MCP server in workspace config",
                 ui_targets=UI_TARGETS,
-                required_capabilities=TEXT_REQUIRED,
                 triggers=(slash_trigger("/mcp enable <server>"),),
                 parser=_parse_enable_mcp,
                 handler=_handle_toggle_mcp_server,
             ),
             ActionSpec(
                 action_id="mcp.disable",
+                command_type=ToggleMCPServerCommand,
+                audit="runtime_config_changed",
                 feature_id="mcp",
                 description="[global][local-only] Disable an MCP server in workspace config",
                 ui_targets=UI_TARGETS,
-                required_capabilities=TEXT_REQUIRED,
                 triggers=(slash_trigger("/mcp disable <server>"),),
                 parser=_parse_disable_mcp,
                 handler=_handle_toggle_mcp_server,

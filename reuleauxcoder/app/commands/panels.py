@@ -6,14 +6,16 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Callable
 
+from reuleauxcoder.app.commands.requests import ActionRequest
+
 
 @dataclass(frozen=True, slots=True)
 class PanelItem:
-    """One semantic panel row with an optional canonical command."""
+    """One semantic panel row with an optional structured action."""
 
     label: str
     description: str
-    command: str
+    action: ActionRequest | None = None
     current: bool = False
 
 

@@ -1,6 +1,5 @@
 from types import SimpleNamespace
 
-from reuleauxcoder.app.commands.dispatcher import dispatch_command
 from reuleauxcoder.app.commands.models import CommandEffect
 from reuleauxcoder.app.commands.registry import ActionRegistry
 from reuleauxcoder.app.commands.specs import ActionSpec, TriggerKind, TriggerSpec
@@ -47,12 +46,11 @@ def test_action_registry_parse_returns_first_matching_action() -> None:
 
     registry = ActionRegistry([_slash_action(parser=parser)])
 
-    parsed = registry.parse("/test", ui_profile=CLI_PROFILE, current_session_id="s1")
+    parsed = registry.parse("/test", ui_profile=CLI_PROFILE)
 
     assert parsed is not None
     assert parsed.command == {"value": "/test"}
     assert parsed.action.action_id == "test"
-    assert parsed.registry is registry
 
 
 def test_action_registry_parse_skips_actions_without_available_slash_trigger() -> None:
@@ -82,7 +80,7 @@ def test_action_registry_dispatch_returns_continue_when_handler_missing() -> Non
     assert result.control == "continue"
 
 
-def test_dispatch_command_delegates_to_registry_dispatch() -> None:
+def test_dispatch_returns_the_handler_effect() -> None:
     called = []
 
     def handler(command, ctx):
@@ -95,7 +93,7 @@ def test_dispatch_command_delegates_to_registry_dispatch() -> None:
     )
     ctx = SimpleNamespace(effect=CommandEffect())
 
-    result = dispatch_command(parsed, ctx)
+    result = registry.dispatch(parsed, ctx)
 
     assert result.control == "exit"
     assert called == [({"ok": True}, ctx)]

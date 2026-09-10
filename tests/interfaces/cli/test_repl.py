@@ -1,48 +1,24 @@
 from types import SimpleNamespace
 
 import reuleauxcoder.interfaces.cli.repl as repl_module
+from reuleauxcoder.app.commands.requests import CommandResult
+from reuleauxcoder.app.rpc.models import RuntimeSnapshot
+from reuleauxcoder.app.ui_events import UIEventBus
 
 
-def test_new_repl_input_clears_previous_stop_before_command_dispatch(
-    monkeypatch,
-    tmp_path,
-) -> None:
+def test_repl_submits_through_runtime_and_observes_backend_exit(monkeypatch, tmp_path):
     operations = []
-    agent = SimpleNamespace(
-        current_session_id=None,
-        clear_stop_request=lambda: operations.append("clear"),
+    runtime = SimpleNamespace(
+        state=RuntimeSnapshot(model="test"),
+        info={"base_url": "", "history_file": str(tmp_path / "history")},
+        submit=lambda text: operations.append(text),
+        wait_idle=lambda **kwargs: runtime.on_completed(CommandResult(control="exit")),
     )
-    config = SimpleNamespace(
-        model="test-model",
-        base_url="https://example.invalid",
-        history_file=str(tmp_path / "history"),
-    )
-
     monkeypatch.setattr(repl_module, "ensure_user_dirs", lambda: None)
     monkeypatch.setattr(repl_module, "show_banner", lambda *args, **kwargs: None)
-    monkeypatch.setattr(
-        repl_module,
-        "pt_prompt",
-        lambda *args, **kwargs: "/compact force summarize",
-    )
+    inputs = iter(["/quit"])
+    monkeypatch.setattr(repl_module, "pt_prompt", lambda *args, **kwargs: next(inputs))
 
-    def handle_command(*args, **kwargs):
-        operations.append("dispatch")
-        return {
-            "action": "exit",
-            "action_id": "system.exit",
-            "session_id": None,
-            "session_exit_time": None,
-        }
+    repl_module.run_repl(runtime, UIEventBus())
 
-    monkeypatch.setattr(repl_module, "handle_command", handle_command)
-
-    repl_module.run_repl(
-        agent,
-        config,
-        SimpleNamespace(),
-        SimpleNamespace(),
-        SimpleNamespace(),
-    )
-
-    assert operations == ["clear", "dispatch"]
+    assert operations == ["/quit"]

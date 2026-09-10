@@ -1,3 +1,4 @@
+from reuleauxcoder.app.commands.requests import ActionRequest
 import pytest
 
 from reuleauxcoder.app.commands.panels import (
@@ -18,7 +19,7 @@ def _build(model: object, title: str) -> PanelDefinition:
     return PanelDefinition(
         view_type="example",
         title=title,
-        items=(PanelItem("one", "first", "/example one"),),
+        items=(PanelItem("one", "first", ActionRequest("test", "/example one")),),
     )
 
 
@@ -26,22 +27,20 @@ def test_panel_spec_rejects_the_wrong_view_model_type() -> None:
     spec = CommandPanelSpec("example", ExampleView, _build)
 
     assert spec.build_for(object(), "Example") is None
-    assert spec.build_for(ExampleView(), "Example") == _build(
-        ExampleView(), "Example"
-    )
+    assert spec.build_for(ExampleView(), "Example") == _build(ExampleView(), "Example")
 
 
 def test_panel_definition_resolves_typed_child_by_row_label() -> None:
     child = PanelDefinition(
         view_type="child",
         title="Child",
-        items=(PanelItem("run", "execute", "/example run"),),
+        items=(PanelItem("run", "execute", ActionRequest("test", "/example run")),),
         return_to_parent_on_submit=True,
     )
     root = PanelDefinition(
         view_type="example",
         title="Example",
-        items=(PanelItem("details", "open details", ""),),
+        items=(PanelItem("details", "open details"),),
         children=(("details", child),),
         filterable=True,
     )

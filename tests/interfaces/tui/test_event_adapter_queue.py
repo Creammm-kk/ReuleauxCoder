@@ -120,7 +120,7 @@ def test_adapter_records_content_free_queue_pressure_metrics() -> None:
     monitor = RuntimePerformanceMonitor()
     adapter = MiniTUIEventAdapter(
         root_agent_id="root",
-        performance_monitor=monitor,
+        performance_sink=monitor.record,
         event_queue_capacity=4,
         event_queue_control_reserve=1,
     )
@@ -438,7 +438,7 @@ def test_transient_capacity_rejection_is_metrics_only() -> None:
     monitor = RuntimePerformanceMonitor()
     adapter = MiniTUIEventAdapter(
         root_agent_id="root",
-        performance_monitor=monitor,
+        performance_sink=monitor.record,
         event_queue_capacity=2,
         event_queue_control_reserve=1,
     )
@@ -567,7 +567,7 @@ def test_monitor_failure_preserves_delivery_and_surfaces_on_next_paint() -> None
 
     adapter = MiniTUIEventAdapter(
         root_agent_id="root",
-        performance_monitor=BrokenMonitor(),
+        performance_sink=BrokenMonitor().record,
     )
     invalidations = []
     adapter.bind_invalidator(lambda: invalidations.append(True))

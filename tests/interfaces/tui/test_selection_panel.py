@@ -1,12 +1,18 @@
+from reuleauxcoder.app.commands.requests import ActionRequest
 from reuleauxcoder.app.commands.panels import PanelDefinition, PanelItem
 from reuleauxcoder.interfaces.tui.selection_panel import SelectionPanel
 
 
 def _items() -> tuple[PanelItem, ...]:
     return (
-        PanelItem("coder", "Default coding mode", "/mode switch coder", True),
-        PanelItem("plan", "Planning first", "/mode switch plan"),
-        PanelItem("debug", "Debugging", "/mode switch debug"),
+        PanelItem(
+            "coder",
+            "Default coding mode",
+            ActionRequest("test", "/mode switch coder"),
+            True,
+        ),
+        PanelItem("plan", "Planning first", ActionRequest("test", "/mode switch plan")),
+        PanelItem("debug", "Debugging", ActionRequest("test", "/mode switch debug")),
     )
 
 
@@ -18,7 +24,7 @@ def test_open_starts_on_current_item() -> None:
 
     assert panel.index == 1
     assert panel.selected.label == "coder"
-    assert panel.selected.command == "/mode switch coder"
+    assert panel.selected.action == ActionRequest("test", "/mode switch coder")
 
 
 def test_refresh_keeps_highlight_on_same_label() -> None:
@@ -29,9 +35,13 @@ def test_refresh_keeps_highlight_on_same_label() -> None:
     assert panel.selected.label == "plan"
 
     refreshed = (
-        PanelItem("coder", "Default coding mode", "/mode switch coder"),
-        PanelItem("debug", "Debugging", "/mode switch debug"),
-        PanelItem("plan", "Planning first", "/mode switch plan", True),
+        PanelItem(
+            "coder", "Default coding mode", ActionRequest("test", "/mode switch coder")
+        ),
+        PanelItem("debug", "Debugging", ActionRequest("test", "/mode switch debug")),
+        PanelItem(
+            "plan", "Planning first", ActionRequest("test", "/mode switch plan"), True
+        ),
     )
     panel.refresh(PanelDefinition("mode_profiles", "Modes", refreshed))
 
@@ -49,7 +59,7 @@ def test_refresh_falls_back_when_label_disappears() -> None:
         PanelDefinition(
             "mode_profiles",
             "Modes",
-            (PanelItem("coder", "only", "/mode switch coder"),),
+            (PanelItem("coder", "only", ActionRequest("test", "/mode switch coder")),),
         )
     )
 

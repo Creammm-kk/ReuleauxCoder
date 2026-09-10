@@ -1,0 +1,378 @@
+"""One backend session owns execution, admission and interaction lifecycle."""
+
+from __future__ import annotations
+
+from dataclasses import replace
+import logging
+from pathlib import Path
+import threading
+import time
+from typing import get_type_hints
+
+from reuleauxcoder.app.commands.requests import ActionRequest, CommandResult
+from reuleauxcoder.app.commands.capabilities import UIProfile
+from reuleauxcoder.app.commands.service import CommandService
+from reuleauxcoder.app.rpc.codec import encode, decode
+from reuleauxcoder.app.rpc.models import RuntimeSnapshot, Submission
+from reuleauxcoder.app.runtime.approval import build_runtime_approval_provider
+from reuleauxcoder.app.runtime.approval_interaction import make_approval_handler
+from reuleauxcoder.app.runtime.interactions import InteractionCoordinator
+from reuleauxcoder.app.ui_events import AgentEventBridge, UIEventKind
+from reuleauxcoder.domain.session.models import Session
+from reuleauxcoder.domain.runtime.events import RuntimeEvent, SubagentJobChanged
+from reuleauxcoder.infrastructure.rpc.peer import RpcError, RpcPeer
+
+log = logging.getLogger(__name__)
+
+
+class RemoteInteractor:
+    def __init__(self, peer):
+        self.peer = peer
+
+    def _ask(self, kind, request):
+        timeout = (
+            max(0.0, request.deadline - time.monotonic())
+            if request.deadline is not None
+            else None
+        )
+        wire_request = replace(request, deadline=None)
+        try:
+            return decode(
+                self.peer.request(
+                    "interaction.request",
+                    {
+                        "kind": kind,
+                        "request": encode(wire_request),
+                        "timeout_seconds": timeout,
+                    },
+                    timeout=timeout,
+                )
+            )
+        except TimeoutError:
+            self.cancel(request.request_id)
+            raise
+
+    def confirm(self, request):
+        return self._ask("confirm", request)
+
+    def choose_one(self, request):
+        return self._ask("choose_one", request)
+
+    def input_text(self, request):
+        return self._ask("input_text", request)
+
+    def review(self, request):
+        return self._ask("review", request)
+
+    def cancel(self, request_id):
+        if not self.peer.closed.is_set():
+            self.peer.notify("interaction.cancel", {"request_id": request_id})
+
+    def notify(self, event):
+        self.peer.notify("runtime.event", {"event": encode(event)})
+
+
+class RuntimeServer:
+    def __init__(self, commands: CommandService, peer: RpcPeer):
+        self.commands, self.peer = commands, peer
+        self.agent, self.config, self.bus = (
+            commands.agent,
+            commands.config,
+            commands.ui_bus,
+        )
+        self._lock = threading.Condition(threading.RLock())
+        self._running = False
+        self._closing = False
+        self._initialized = False
+        self._shutdown_lock = threading.Lock()
+        self._shutdown_complete = False
+        self._revision = 0
+        self._workers: set[threading.Thread] = set()
+        self.interactions = InteractionCoordinator(RemoteInteractor(peer))
+        commands.interactions = self.interactions
+        self.agent.ui_interactor = self.interactions
+        self.agent.approval_provider = build_runtime_approval_provider(
+            self.agent, make_approval_handler(self.interactions)
+        )
+        bridge = AgentEventBridge(
+            self.bus, generation_owner_agent_id=self.agent.agent_id
+        )
+        self.agent.add_event_handler(bridge.on_agent_event)
+        self.bus.subscribe(self._event, replay_history=False)
+        peer.methods.update(
+            {
+                "initialize": self.initialize,
+                "runtime.submit": self.submit,
+                "runtime.interrupt": self.interrupt,
+                "runtime.resize": self.resize,
+                "runtime.report_issue": self.agent.record_runtime_issue,
+                "runtime.record_performance": self.record_performance,
+                "runtime.shutdown": self.shutdown,
+                "runtime.snapshot": lambda: encode(self.snapshot()),
+                "view.panel": lambda payload: encode(
+                    commands.build_panel(decode(payload))
+                ),
+            }
+        )
+
+    def _notify(self, method, **params):
+        try:
+            self.peer.notify(method, params)
+        except ConnectionError:
+            if not self.peer.closed.is_set():
+                raise
+
+    def _event(self, event):
+        if self._initialized:
+            self._notify("runtime.event", event=encode(event))
+
+    def snapshot(self):
+        agent = self.agent
+        with self._lock:
+            self._revision += 1
+            manager = agent.mcp_manager
+            context = agent.context
+            return RuntimeSnapshot(
+                revision=self._revision,
+                session_id=self.commands.session_id,
+                agent_id=agent.agent_id,
+                session_generation=agent.session_generation,
+                running=self._running,
+                stopping=agent.stop_requested(),
+                interrupt_pending=agent.round_interrupt_pending(),
+                queued_commands=self.commands.pending_commands,
+                queued_steering=tuple(agent.pending_user_steering()),
+                model=agent.llm.model,
+                context_tokens=context.predict_request_tokens(agent.messages),
+                context_limit=context.request_input_limit,
+                mcp_enabled=sum(server.enabled for server in self.config.mcp_servers),
+                mcp_tools=manager.available_tool_count if manager else 0,
+                mcp_state=manager.initial_state if manager else "ready",
+                workspace=str(agent.runtime_working_directory or Path.cwd()),
+                exit_saved_session_id=self.commands.exit_saved_session_id,
+            )
+
+    def _publish_state(self):
+        state = self.snapshot()
+        self._notify("runtime.state", state=encode(state))
+        return state
+
+    def initialize(self, profile, version=1):
+        with self._lock:
+            if version != 1:
+                raise RpcError(-32001, "Unsupported protocol version")
+            if self._initialized:
+                raise RpcError(-32002, "Already initialized")
+            profile = self._decode(profile)
+            if not isinstance(profile, UIProfile):
+                raise RpcError(-32602, "Expected a UI profile")
+            self.commands.ui_profile = profile
+            recent = Session(
+                id=self.commands.session_id or "new",
+                model=self.agent.llm.model,
+                saved_at="",
+                messages=list(self.agent.messages),
+            ).get_recent_conversation(max_user_turns=3)
+            controller = self.agent.plan_controller
+            result = encode(
+                {
+                    "version": 1,
+                    "catalog": self.commands.catalog,
+                    "state": self.snapshot(),
+                    "history_file": self.config.history_file,
+                    "base_url": self.config.base_url,
+                    "startup_events": self.bus.history_snapshot(),
+                    "recent_conversation": recent,
+                    "plan": controller.state,
+                    "progress": controller.progress,
+                    "runtime_events": self._restored_job_events(),
+                }
+            )
+            self._initialized = True
+            return result
+
+    def _restored_job_events(self):
+        manager = self.agent._subagent_manager
+        if manager is None:
+            return ()
+        return tuple(
+            RuntimeEvent(
+                payload=SubagentJobChanged(
+                    job_id=job.id,
+                    mode=job.mode,
+                    task=job.task,
+                    status=job.status,
+                    result=job.result,
+                    error=job.error,
+                ),
+                agent_id=self.agent.agent_id,
+                session_generation=self.agent.session_generation,
+                session_id=self.commands.session_id,
+            )
+            for job in manager.list_jobs()
+        )
+
+    def record_performance(
+        self, category, name, elapsed_ms, status="ok", attributes=None
+    ):
+        monitor = self.agent.performance_monitor
+        if monitor is not None:
+            monitor.record(
+                category, name, elapsed_ms, status=status, attributes=attributes
+            )
+
+    @staticmethod
+    def _decode(value):
+        try:
+            return decode(value)
+        except (KeyError, TypeError, ValueError) as error:
+            raise RpcError(-32602, "Invalid wire value") from error
+
+    def _input(self, value):
+        value = self._decode(value)
+        if isinstance(value, str):
+            return value
+        if not isinstance(value, ActionRequest) or not isinstance(value.command, dict):
+            raise RpcError(-32602, "Expected text or an action request")
+        action = next(
+            (
+                action
+                for action in self.commands.registry.iter_actions(
+                    self.commands.ui_profile
+                )
+                if action.action_id == value.action_id
+            ),
+            None,
+        )
+        if action is None:
+            raise RpcError(-32602, "Unavailable action")
+        try:
+            command = action.command_type(**value.command)
+            for name, expected in get_type_hints(action.command_type).items():
+                # Builtin command parameters are primitives and optional primitives.
+                if not isinstance(getattr(command, name), expected):
+                    raise TypeError(name)
+            return ActionRequest(value.action_id, command)
+        except (TypeError, ValueError) as error:
+            raise RpcError(-32602, "Invalid action parameters") from error
+
+    def submit(self, value):
+        if not self._initialized:
+            raise RpcError(-32002, "Initialize first")
+        value = self._input(value)
+        with self._lock:
+            if self._closing:
+                raise RpcError(-32002, "Session is closing")
+            if isinstance(value, str) and value.startswith("/"):
+                self._notify("runtime.command", text=value)
+            if self._running:
+                if isinstance(value, str) and not value.startswith("/"):
+                    accepted = self.agent.submit_user_steering(value)
+                    status = "steering" if accepted else "rejected"
+                else:
+                    request = self.commands.prepare_during_turn(value)
+                    status = "queued" if request is None else "running"
+                    if request is not None:
+                        self._spawn(request, concurrent=True)
+            else:
+                self._running = True
+                status = "running"
+                self._spawn(value)
+            return encode(Submission(status, self._publish_state()))
+
+    def _spawn(self, value, *, concurrent=False):
+        worker = threading.Thread(
+            target=self._run,
+            args=(value, concurrent),
+            name="runtime-operation",
+            daemon=True,
+        )
+        self._workers.add(worker)
+        worker.start()
+
+    def _run(self, value, concurrent):
+        try:
+            while value is not None:
+                try:
+                    result = self.commands.submit(value, during_turn=concurrent)
+                    if result.control == "chat":
+                        self.agent.chat(self.commands.prepare_chat_input(value))
+                        result = CommandResult(session_id=self.commands.session_id)
+                    self._notify("runtime.completed", result=encode(result))
+                    if result.control == "exit":
+                        with self._lock:
+                            self._closing = True
+                except KeyboardInterrupt:
+                    self.agent.request_stop()
+                    self.bus.warning("Interrupted.")
+                except BaseException as error:
+                    log.exception("Runtime operation failed")
+                    self.commands.record_chat_failure(error)
+                    self.bus.error(
+                        f"Operation failed: {type(error).__name__}: {error}",
+                        kind=UIEventKind.SYSTEM,
+                    )
+                    self._notify(
+                        "runtime.failed",
+                        error_type=type(error).__name__,
+                        message=str(error),
+                    )
+                with self._lock:
+                    value = (
+                        None
+                        if concurrent or self._closing
+                        else self.commands.next_pending()
+                    )
+                    if not concurrent and value is None:
+                        self._running = False
+                    self._publish_state()
+        except BaseException:
+            log.exception("Runtime could not record or publish its result")
+            with self._lock:
+                if not concurrent:
+                    self._running = False
+            self.peer.close()
+        finally:
+            with self._lock:
+                self._workers.discard(threading.current_thread())
+                self._lock.notify_all()
+
+    def interrupt(self):
+        result = self.agent.request_interrupt_intent()
+        self._publish_state()
+        return {
+            "outcome": result.outcome.value,
+            "discarded_count": result.discarded_count,
+        }
+
+    def resize(self, rows, columns):
+        manager = self.agent.process_manager
+        if manager is not None:
+            manager.resize_tty_sessions(
+                rows=max(1, int(rows)),
+                columns=max(1, int(columns)),
+                agent_id=self.agent.agent_id,
+                owner_session_id=self.commands.session_id,
+                session_generation=self.agent.session_generation,
+            )
+
+    def shutdown(self):
+        with self._shutdown_lock:
+            if not self._shutdown_complete:
+                self._shutdown()
+                self._shutdown_complete = True
+            return self.commands.exit_saved_session_id
+
+    def _shutdown(self):
+        with self._lock:
+            self._closing = True
+            self.commands.clear_pending()
+            self.agent.discard_pending_user_steering(reason="session_exit")
+            self.agent.request_stop()
+        self.interactions.shutdown(reason="session closed")
+        with self._lock:
+            if not self._lock.wait_for(lambda: not self._workers, timeout=10):
+                raise TimeoutError("Backend operations did not stop within 10 seconds")
+        self.agent.reconcile_pending_tool_calls("session closed")
+        self.commands.save_exit()
+        self._publish_state()

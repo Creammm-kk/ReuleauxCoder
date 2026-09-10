@@ -14,6 +14,7 @@ def parse_args():
     parser.add_argument("-m", "--model", help="Override model from config.yaml")
     parser.add_argument("-p", "--prompt", help="One-shot prompt (non-interactive mode)")
     parser.add_argument("-r", "--resume", metavar="ID", help="Resume a saved session")
+    parser.add_argument("--rpc-stdio", action="store_true", help="Run the JSON-RPC backend on stdin/stdout")
     parser.add_argument(
         "--server",
         action="store_true",
