@@ -28,6 +28,7 @@ log = logging.getLogger(__name__)
 class RemoteInteractor:
     def __init__(self, peer):
         self.peer = peer
+        self.review_request = None
 
     def _ask(self, kind, request):
         timeout = (
@@ -62,7 +63,11 @@ class RemoteInteractor:
         return self._ask("input_text", request)
 
     def review(self, request):
-        return self._ask("review", request)
+        self.review_request = request
+        try:
+            return self._ask("review", request)
+        finally:
+            self.review_request = None
 
     def cancel(self, request_id):
         if not self.peer.closed.is_set():
@@ -124,7 +129,11 @@ class RuntimeServer:
 
     def _event(self, event):
         if self._initialized:
-            self._notify("runtime.event", event=encode(event))
+            self._notify(
+                "runtime.event",
+                event=encode(event),
+                session_generation=self.agent.session_generation,
+            )
 
     def snapshot(self):
         agent = self.agent
@@ -132,6 +141,7 @@ class RuntimeServer:
             self._revision += 1
             manager = agent.mcp_manager
             context = agent.context
+            review = self.interactions.adapter.review_request
             return RuntimeSnapshot(
                 revision=self._revision,
                 session_id=self.commands.session_id,
@@ -150,6 +160,7 @@ class RuntimeServer:
                 mcp_state=manager.initial_state if manager else "ready",
                 workspace=str(agent.runtime_working_directory or Path.cwd()),
                 exit_saved_session_id=self.commands.exit_saved_session_id,
+                approval_waiting=review.queue_status.waiting if review else 0,
             )
 
     def _publish_state(self):

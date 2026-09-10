@@ -22,6 +22,7 @@ class RuntimeSnapshot:
     mcp_state: str = "ready"
     workspace: str = ""
     exit_saved_session_id: str | None = None
+    approval_waiting: int = 0
 
 
 @dataclass(frozen=True, slots=True)

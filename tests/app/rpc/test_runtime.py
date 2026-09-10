@@ -1,4 +1,5 @@
 import threading
+from types import MappingProxyType
 import pytest
 
 from reuleauxcoder.app.commands.requests import ActionRequest
@@ -111,6 +112,49 @@ def test_user_metadata_cannot_be_decoded_as_a_contract():
         "data", arbitrary={"$type": "ActionRequest", "fields": {"x": 1}}
     )
     assert decode(encode(original)) == original
+
+
+def test_tool_outcome_readonly_metadata_round_trips():
+    from reuleauxcoder.domain.agent.tool_outcome import ToolOutcome
+
+    outcome = ToolOutcome(
+        stdout="complete tool output",
+        metadata=MappingProxyType(
+            {"nested": (MappingProxyType({"$type": "user-data", "value": 1}),)}
+        ),
+    )
+    assert decode(encode(outcome)) == outcome
+
+
+def test_executed_tool_result_reaches_frontend(runtime, tmp_path):
+    from reuleauxcoder.app.ui_events import RuntimeEventPayload
+    from reuleauxcoder.domain.agent.tool_execution import ToolExecutor
+    from reuleauxcoder.domain.llm.models import ToolCall
+    from reuleauxcoder.domain.runtime.events import ToolCallFinished
+    from reuleauxcoder.extensions.tools.builtin.list_file import ListFileTool
+
+    (tmp_path / "retained.txt").write_text("test")
+    runtime.agent.tools = [ListFileTool()]
+    runtime.loop.run = lambda: ToolExecutor(runtime.agent).execute(
+        ToolCall(id="list-call", name="list_file", arguments={"path": str(tmp_path)})
+    )
+    received = []
+    delivered = threading.Event()
+
+    def observe(event):
+        if isinstance(event.payload, RuntimeEventPayload) and isinstance(
+            event.payload.event.payload, ToolCallFinished
+        ):
+            received.append(event.payload.event.payload)
+            delivered.set()
+
+    runtime.bus.subscribe(observe, replay_history=False)
+    runtime.client.submit("List files")
+    runtime.client.wait_idle()
+    assert delivered.wait(2), "ToolCallFinished must cross the JSON-RPC boundary"
+    assert received[0].outcome.success
+    assert "retained.txt" in received[0].outcome.display_text
+    assert received[0].tool_call_id == "list-call"
 
 
 def test_wire_deadlines_are_rebased_at_the_receiving_process(runtime):

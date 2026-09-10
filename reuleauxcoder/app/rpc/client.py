@@ -30,7 +30,9 @@ class RuntimeClient:
         peer.on_close = self._disconnected
         peer.notifications.update(
             {
-                "runtime.event": lambda event: ui_bus.emit(decode(event)),
+                "runtime.event": lambda event, session_generation=None: ui_bus.emit(
+                    decode(event)
+                ),
                 "runtime.state": lambda state: self._state(decode(state)),
                 "runtime.completed": lambda result: self.on_completed(decode(result)),
                 "runtime.command": lambda text: self.on_command(text),

@@ -6,6 +6,7 @@ data cannot be interpreted as records. Callables and runtime objects fail loudly
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import asdict, fields, is_dataclass
 from enum import Enum
 
@@ -21,6 +22,7 @@ from reuleauxcoder.app.commands import (
 )
 from reuleauxcoder.app.rpc import models
 from reuleauxcoder.domain import approval, plan
+from reuleauxcoder.domain.agent import tool_outcome
 from reuleauxcoder.domain.runtime import events
 from reuleauxcoder.extensions.mcp import models as mcp_models
 from reuleauxcoder.extensions.skills import models as skill_models
@@ -39,6 +41,7 @@ _MODULES = (
     plan,
     mcp_models,
     skill_models,
+    tool_outcome,
 )
 _TYPES = {
     value.__name__: value
@@ -101,7 +104,7 @@ def encode(value):
         }
     if isinstance(value, list):
         return [encode(item) for item in value]
-    if isinstance(value, dict):
+    if isinstance(value, Mapping):
         if not all(isinstance(key, str) for key in value):
             raise TypeError("Wire dictionaries require string keys")
         data = {key: encode(item) for key, item in value.items()}
