@@ -147,77 +147,38 @@ def main():
             runner.cleanup()
         return
 
-    use_tui = not args.prompt and sys.stdin.isatty() and sys.stdout.isatty()
     connection = None
     output = None
     try:
         if not ctx.config.api_key:
             _terminal_status("No API key found in config.yaml.", tone=DisplayTone.ERROR)
             return 1
-        if use_tui:
-            from reuleauxcoder.interfaces.tui import (
-                MiniTUIApplication,
-                MiniTUIEventAdapter,
-                MiniTUIInteractor,
-            )
-
-            interactor = MiniTUIInteractor(frontend_bus)
-            connection = connect_local(ctx, cli_ui.profile, frontend_bus, interactor)
-            runtime = connection.client
-            event_adapter = MiniTUIEventAdapter(
-                root_agent_id=runtime.state.agent_id,
-                session_generation=runtime.state.session_generation,
-                incident_sink=runtime.report_runtime_issue,
-                performance_sink=runtime.record_performance,
-            )
-            frontend_bus.subscribe(event_adapter.on_ui_event)
-            info = runtime.info
-            event_adapter.append_restored_conversation(info["recent_conversation"])
-            if info["plan"] is not None:
-                event_adapter.restore_control_state(
-                    info["plan"], info["progress"], session_id=runtime.state.session_id
-                )
-            application = MiniTUIApplication(
-                runtime=runtime,
-                ui_bus=frontend_bus,
-                ui_profile=cli_ui.profile,
-                interactor=interactor,
-                event_adapter=event_adapter,
-                startup_events=info["startup_events"],
-            )
-            _terminal_status("Starting terminal UI...", tone=DisplayTone.ACCENT)
-            application.run()
-            if application.saved_session_id:
-                _terminal_status(
-                    f"Session saved: {application.saved_session_id}.",
-                    tone=DisplayTone.SUCCESS,
-                )
+        renderer = CLIRenderer(
+            view_registry=cli_ui.view_registry,
+            policy=PresentationPolicy.from_ui_config(ctx.config.ui),
+            root_agent_id=ctx.agent.agent_id,
+            live_activity=bool(args.prompt),
+        )
+        output = CLIOutputCoordinator(renderer)
+        frontend_bus.subscribe(output.on_ui_event)
+        connection = connect_local(
+            ctx,
+            cli_ui.profile,
+            frontend_bus,
+            cli_ui.interactor,
+            foreground_interactions=True,
+        )
+        runtime = connection.client
+        if args.prompt:
+            _run_once(runtime, args.prompt, output)
         else:
-            connection = connect_local(
-                ctx,
-                cli_ui.profile,
+            run_repl(
+                runtime,
                 frontend_bus,
+                output,
                 cli_ui.interactor,
-                foreground_interactions=True,
+                runtime.info["startup_events"],
             )
-            runtime = connection.client
-            renderer = CLIRenderer(
-                view_registry=cli_ui.view_registry,
-                policy=PresentationPolicy.from_ui_config(ctx.config.ui),
-                root_agent_id=runtime.state.agent_id,
-            )
-            output = CLIOutputCoordinator(renderer)
-            frontend_bus.subscribe(output.on_ui_event)
-            if args.prompt:
-                _run_once(runtime, args.prompt, output)
-            else:
-                run_repl(
-                    runtime,
-                    frontend_bus,
-                    output,
-                    cli_ui.interactor,
-                    runtime.info["startup_events"],
-                )
     finally:
         try:
             if connection is not None:

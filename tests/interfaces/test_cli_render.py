@@ -151,4 +151,4 @@ def test_cli_renderer_falls_back_to_plain_text_when_markdown_render_fails() -> N
     assert isinstance(first_call.args[0], Markdown)
     assert first_call.kwargs == {"end": ""}
     assert second_call.args == ("**hi**",)
-    assert second_call.kwargs == {"end": ""}
+    assert second_call.kwargs == {"end": "", "markup": False, "highlight": False}

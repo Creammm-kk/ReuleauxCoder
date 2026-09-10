@@ -53,7 +53,15 @@ from reuleauxcoder.presentation import (
     ReasoningDisplay,
     Verbosity,
 )
-from reuleauxcoder.presentation.execution import operation_phase_activity
+from reuleauxcoder.presentation.execution import (
+    ExecutionViewReducer,
+    operation_phase_activity,
+)
+from reuleauxcoder.interfaces.cli.details import (
+    restore_context,
+    render_details,
+    render_tools,
+)
 from reuleauxcoder.presentation.policy import fold_text
 from reuleauxcoder.interfaces.cli.interaction_presenter import (
     render_interaction_request,
@@ -76,13 +84,16 @@ class CLIRenderer:
         theme: CLITheme = DEFAULT_CLI_THEME,
         terminal_width_provider: Callable[[], int | None] | None = None,
         root_agent_id: str | None = None,
+        live_activity: bool = True,
     ):
         self.console = console_override or console
         self.reducer = reducer or PresentationReducer(policy=policy)
         self.policy = self.reducer.policy
         self.theme = theme
         self.history = CLIHistoryPresenter(self.console, self.policy, theme)
-        self.activity = CLIActivityPresenter(self.console, theme=theme)
+        self.activity = CLIActivityPresenter(
+            self.console, theme=theme, enabled=live_activity
+        )
         self.stream = CLIStreamPresenter(
             lambda text: self.render_content_markdown(text),
             lambda text: self.render_plain_text(text),
@@ -90,6 +101,7 @@ class CLIRenderer:
         self.view_registry = view_registry or create_cli_view_registry()
         self._terminal_width_provider = terminal_width_provider
         self._root_agent_id = root_agent_id
+        self.execution = ExecutionViewReducer(root_agent_id=root_agent_id)
         # Reasoning streaming state
         self._reasoning_label_printed: bool = False
 
@@ -105,6 +117,7 @@ class CLIRenderer:
     def on_runtime_event(self, event: RuntimeEvent) -> None:
         """Render one typed runtime event after reducing shared state."""
         self._refresh_terminal_width()
+        self.execution.apply(event)
         if self._root_agent_id is None and isinstance(
             event.payload, (ChatStarted, TurnStarted)
         ):
@@ -137,6 +150,10 @@ class CLIRenderer:
         elif isinstance(payload, ToolCallFinished) and changes:
             self._render_tool_end(payload.tool_name, payload.outcome)
         elif isinstance(payload, ToolOutputDelta) and changes:
+            if not self.activity.enabled:
+                self._close_active_content_block()
+                self.render_plain_text(payload.text)
+                return
             if not self.activity.is_active:
                 cell = self.reducer.state.transcript.get(f"tool:{payload.tool_call_id}")
                 tool_name = getattr(cell, "name", "tool")
@@ -328,10 +345,11 @@ class CLIRenderer:
         if isinstance(event.payload, ReasoningNoticePayload):
             self._close_active_content_block()
             self.history.notice(
-                message,
+                event.payload.title,
                 level="info",
-                category=event.payload.title,
+                category="thinking",
             )
+            self.console.print(Markdown(event.message), style="dim")
             return
 
         self._close_active_content_block()
@@ -387,4 +405,20 @@ class CLIRenderer:
 
     def render_plain_text(self, text: str) -> None:
         """Render raw text without markdown parsing."""
-        self.console.print(text, end="")
+        self.console.print(text, end="", markup=False, highlight=False)
+
+    def restore(self, info, state) -> None:
+        restore_context(self, info, state)
+
+    def show_details(self, state, startup_events=()) -> None:
+        self._close_active_content_block()
+        render_details(self, state, startup_events)
+
+    @property
+    def current_activity(self) -> str:
+        main = self.execution.state.agents.get(self._root_agent_id)
+        return main.activity if main is not None else ""
+
+    def show_tools(self) -> None:
+        self._close_active_content_block()
+        render_tools(self)

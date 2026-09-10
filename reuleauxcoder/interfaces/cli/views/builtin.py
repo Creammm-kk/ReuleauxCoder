@@ -136,12 +136,7 @@ def render_session_resume_view(renderer, event) -> bool:
                 renderer.theme.user_label if is_user else renderer.theme.assistant_label
             ),
         )
-        content = fold_text(
-            entry.content,
-            max_lines=max(5, renderer.policy.tool_preview_lines),
-            max_chars=max(800, renderer.policy.tool_preview_chars),
-        )
-        table.add_row(label, Text(content))
+        table.add_row(label, Text(entry.content))
     renderer.console.print(table)
     return True
 
@@ -243,6 +238,11 @@ def render_model_profiles_view(renderer, event) -> bool:
     renderer.console.print(table)
     for diagnostic in model.diagnostics:
         render_notice(renderer, diagnostic, DisplayTone.WARNING)
+    render_notice(
+        renderer,
+        "Switch main: /model <profile> · Switch subagent: /model use-sub <profile>",
+        DisplayTone.MUTED,
+    )
     return True
 
 

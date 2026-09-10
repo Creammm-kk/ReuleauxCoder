@@ -73,10 +73,12 @@ class CLIActivityPresenter:
         *,
         theme: CLITheme = DEFAULT_CLI_THEME,
         live_factory: Callable[..., Live] = Live,
+        enabled: bool = True,
     ) -> None:
         self.console = console
         self.theme = theme
         self._live_factory = live_factory
+        self._enabled = enabled
         self._live: Live | None = None
         self._pulse: _PulseRenderable | None = None
         self._tail: deque[tuple[str, str]] = deque(maxlen=5)
@@ -85,7 +87,9 @@ class CLIActivityPresenter:
 
     @property
     def enabled(self) -> bool:
-        return bool(self.console.is_terminal and not self.console.is_jupyter)
+        return self._enabled and bool(
+            self.console.is_terminal and not self.console.is_jupyter
+        )
 
     @property
     def is_active(self) -> bool:

@@ -98,7 +98,7 @@ def test_backend_cancel_closes_visible_terminal_prompt(monkeypatch):
         session = PromptSession(input=pipe, output=DummyOutput())
         shown = threading.Event()
         session.app.after_render += lambda app: shown.set()
-        monkeypatch.setattr(module, "PromptSession", lambda: session)
+        monkeypatch.setattr(module, "PromptSession", lambda **kwargs: session)
         interactor = CLIUIInteractor(UIEventBus())
         request = ConfirmRequest("Confirm", "Question")
         with ThreadPoolExecutor(max_workers=1) as pool:

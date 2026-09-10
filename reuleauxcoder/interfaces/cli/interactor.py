@@ -9,6 +9,7 @@ import threading
 import time
 
 from prompt_toolkit import PromptSession
+from prompt_toolkit.application import get_app_session
 
 from reuleauxcoder.app.ui_events import UIEvent, UIEventBus, UIEventKind
 from reuleauxcoder.app.interaction_contracts import (
@@ -52,7 +53,7 @@ class CLIUIInteractor:
                 self._request = None
 
     def _terminal_prompt(self, message, *, is_password=False):
-        session = self._active_prompt = PromptSession()
+        session = self._active_prompt = PromptSession(output=get_app_session().output)
         try:
             return session.prompt(
                 message, is_password=is_password, pre_run=self._cancel_expired_prompt

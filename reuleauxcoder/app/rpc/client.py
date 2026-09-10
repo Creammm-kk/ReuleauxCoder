@@ -108,6 +108,10 @@ class RuntimeClient:
             },
         )
 
+    @property
+    def has_pending_interactions(self):
+        return not self._interaction_queue.empty()
+
     def pump_interactions(self):
         while not self._interaction_queue.empty():
             kind, request, future = self._interaction_queue.get_nowait()

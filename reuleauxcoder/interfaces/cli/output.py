@@ -30,6 +30,10 @@ class CLIOutputCoordinator:
             return
         self._pending.put(event)
 
+    @property
+    def has_pending(self) -> bool:
+        return not self._pending.empty()
+
     def drain(self) -> int:
         """Render all queued events from the owner thread."""
         if threading.get_ident() != self.owner_thread_id:
@@ -43,6 +47,12 @@ class CLIOutputCoordinator:
             if not self._closed:
                 self.renderer.on_ui_event(event)
                 drained += 1
+
+    def capture_pending(self) -> str:
+        """Reduce queued events before deciding whether the prompt must move."""
+        with self.renderer.console.capture() as capture:
+            self.drain()
+        return capture.get()
 
     def close(self) -> None:
         if self._closed:
