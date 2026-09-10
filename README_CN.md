@@ -29,12 +29,19 @@ pipx install https://github.com/RC-CHN/ReuleauxCoder/releases/download/v0.8.1/re
 uv tool install https://github.com/RC-CHN/ReuleauxCoder/releases/download/v0.8.1/reuleauxcoder-0.8.1-py3-none-any.whl
 ```
 
-安装完成后，`rcoder` 命令在任意目录下都可以直接使用：
+wheel 内含 TUI 及其 JavaScript 依赖，安装不需要 Node 或 npm。
+安装完成后，三个命令在任意目录下都可以直接使用：
 
 ```bash
 rcoder --version
-rcoder
+rcoder       # 交互终端中有 Node >=22 则启动 TUI，否则说明原因并使用 CLI
+rcoder-cli   # 显式启动线性 CLI
+rcoder-tui   # 显式启动 TUI；Node 缺失、过旧或终端不支持时明确报错
 ```
+
+`--prompt`、`--server`、`--rpc-stdio` 和输入输出重定向始终走 CLI/后端模式。
+TUI 资源缺失会提示重新安装发布 wheel 或从源码构建，不会默默启动残缺界面。
+TUI 默认使用 uv tool 自己环境中的 Python 启动后端，不依赖系统 Python。
 
 ### 从源码运行（面向开发者）
 
@@ -42,6 +49,10 @@ rcoder
 
 ```bash
 uv sync
+uv run rcoder-cli
+# 需要 TUI 时先构建一次资源（开发环境需要 Node >=22 和 npm）：
+npm ci --prefix reuleauxcoder-tui
+npm run bundle --prefix reuleauxcoder-tui
 uv run rcoder
 ```
 

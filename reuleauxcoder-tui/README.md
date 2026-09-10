@@ -4,7 +4,12 @@
 
 ## 运行
 
-需要 Node.js 22+，以及本仓库已安装依赖的 Python 环境。沿用 `rcoder` 的模型和 API 配置。在仓库根目录执行：
+安装发布 wheel 后直接运行 `rcoder` 或 `rcoder-tui`，需要 Node.js 22+，不需要 npm。
+`rcoder` 在 Node 不可用时提示原因并回退 CLI；`rcoder-cli` 始终选择 CLI，`rcoder-tui`
+则会明确报告 Node 缺失、过旧或非交互终端。Python 启动器使用工具自身的解释器启动后端。
+
+以下是源码开发方式，需要 Node.js 22+、npm 以及本仓库已安装依赖的 Python 环境。
+沿用 `rcoder` 的模型和 API 配置。在仓库根目录执行：
 
 ```sh
 npm --prefix reuleauxcoder-tui ci
@@ -21,7 +26,12 @@ node reuleauxcoder-tui/dist/cli.js --resume session-id
 node reuleauxcoder-tui/dist/cli.js --python /path/to/venv/bin/python
 ```
 
-开发时运行 `npm --prefix reuleauxcoder-tui run dev -- --cwd /path/to/project`。构建后的包也提供 `rcoder-tui` bin。`rcoder` 入口使用终端原生滚屏的线性 CLI，同样经过 JSON-RPC。
+开发时运行 `npm --prefix reuleauxcoder-tui run dev -- --cwd /path/to/project`。
+
+发布构建执行 `npm run bundle --prefix reuleauxcoder-tui`，产物写入 Python 包的
+`reuleauxcoder/_tui/`，再运行 `uv build` 和 `python scripts/check-distributions.py`。
+bundle 包含运行时依赖及 Yoga WASM，附带第三方许可证；构建工具与 `node_modules`
+不会进入发布包。源码包也包含已构建资源，从源码包安装无需运行 npm。
 
 ## 主题
 

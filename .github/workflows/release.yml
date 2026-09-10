@@ -92,8 +92,26 @@ jobs:
       - name: Run tests
         run: uv run pytest -q
 
+      - name: Setup Node for bundled distribution
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: reuleauxcoder-tui/package-lock.json
+
+      - name: Bundle TUI
+        run: |
+          npm ci --prefix reuleauxcoder-tui
+          npm run bundle --prefix reuleauxcoder-tui
+
       - name: Build distributions
         run: uv build
+
+      - name: Check packaged frontends
+        run: uv run python scripts/check-distributions.py
+
+      - name: Install wheel and smoke test outside checkout
+        run: uv run python scripts/smoke-install.py
 
       - name: Download peer artifacts
         uses: actions/download-artifact@v8

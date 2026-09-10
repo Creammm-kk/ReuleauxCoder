@@ -29,12 +29,20 @@ Or use [`uv`](https://docs.astral.sh/uv/) (v0.8.2+):
 uv tool install https://github.com/RC-CHN/ReuleauxCoder/releases/download/v0.8.2/reuleauxcoder-0.8.2-py3-none-any.whl
 ```
 
-After installation, the `rcoder` command is available globally — run it from any directory:
+The wheel includes the React TUI and its JavaScript dependencies. Installation
+does not require Node or npm. Three commands are available globally:
 
 ```bash
 rcoder --version
-rcoder
+rcoder       # TUI with Node >=22 in an interactive terminal; otherwise CLI
+rcoder-cli   # Always use the linear CLI
+rcoder-tui   # Require the TUI; report missing/old Node or non-terminal I/O
 ```
+
+Automatic CLI fallback explains why Node is unavailable. `--prompt`, `--server`,
+`--rpc-stdio` and redirected input/output always use CLI/backend mode. A missing
+TUI bundle is an installation error with rebuild/reinstall instructions.
+The TUI starts its backend with the Python interpreter from the tool's own environment.
 
 ### Run from source (for developers)
 
@@ -42,6 +50,10 @@ rcoder
 
 ```bash
 uv sync
+uv run rcoder-cli
+# For the TUI, build the bundled resources once (requires Node >=22 and npm):
+npm ci --prefix reuleauxcoder-tui
+npm run bundle --prefix reuleauxcoder-tui
 uv run rcoder
 ```
 
@@ -72,7 +84,7 @@ cp config.yaml.example .rcoder/config.yaml   # or write your own
 
 ## React TUI
 
-The independent React + Ink frontend lives in [`reuleauxcoder-tui/`](reuleauxcoder-tui/README.md). It uses the Python runtime over JSON-RPC, with top-level slash menus, command panels, approvals and a persistent composer. Requires Node.js 22+ and the repository's Python environment.
+The independent React + Ink frontend lives in [`reuleauxcoder-tui/`](reuleauxcoder-tui/README.md). It uses the Python runtime over JSON-RPC, with top-level slash menus, command panels, approvals and a persistent composer. Release-wheel users run `rcoder` or `rcoder-tui` with Node.js 22+. For frontend development:
 
 ```sh
 npm --prefix reuleauxcoder-tui ci
@@ -80,7 +92,7 @@ npm --prefix reuleauxcoder-tui run build
 node reuleauxcoder-tui/dist/cli.js
 ```
 
-Use `--cwd /path/to/project` to choose a workspace. The `rcoder` entry point runs the linear CLI. See the frontend README for TUI keyboard controls and SSH backends.
+Use `rcoder-tui --cwd /path/to/project` to choose a workspace, or `rcoder-cli` for the linear CLI. See the frontend README for TUI keyboard controls and SSH backends.
 
 ## Remote Bootstrap (Host/Peer)
 
