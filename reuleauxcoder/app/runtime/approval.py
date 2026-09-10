@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, cast
 
 from reuleauxcoder.domain.approval_engine import (
@@ -271,15 +271,7 @@ def parse_approval_target(
 
 def same_rule_target(left: ApprovalRuleConfig, right: ApprovalRuleConfig) -> bool:
     """Return whether two rules target the same scope."""
-    return (
-        left.tool_name == right.tool_name
-        and left.tool_source == right.tool_source
-        and left.mcp_server == right.mcp_server
-        and left.effect_class == right.effect_class
-        and left.profile == right.profile
-        and left.pattern == right.pattern
-        and left.scope_key == right.scope_key
-    )
+    return same_rule_policy_target(left, right) and left.scope_key == right.scope_key
 
 
 def same_rule_policy_target(
@@ -339,34 +331,12 @@ def clone_approval_rules(
     rules: Sequence[ApprovalRuleConfig],
 ) -> list[ApprovalRuleConfig]:
     """Detach mutable config rules before composing runtime policy."""
-    return [
-        ApprovalRuleConfig(
-            tool_name=rule.tool_name,
-            tool_source=rule.tool_source,
-            mcp_server=rule.mcp_server,
-            effect_class=rule.effect_class,
-            profile=rule.profile,
-            pattern=rule.pattern,
-            scope_key=rule.scope_key,
-            action=rule.action,
-        )
-        for rule in rules
-    ]
+    return [replace(rule) for rule in rules]
 
 
 def approval_rule_payload(rule: ApprovalRuleConfig) -> dict[str, Any]:
     """Serialize one rule for runtime events without coupling to YAML storage."""
-    values = {
-        "tool_name": rule.tool_name,
-        "tool_source": rule.tool_source,
-        "mcp_server": rule.mcp_server,
-        "effect_class": rule.effect_class,
-        "profile": rule.profile,
-        "pattern": rule.pattern,
-        "scope_key": rule.scope_key,
-        "action": rule.action,
-    }
-    return {key: value for key, value in values.items() if value is not None}
+    return rule.to_dict(omit_none=True)
 
 
 def merge_approval_config(
@@ -718,20 +688,6 @@ def _load_raw_approval(path) -> dict:
         return {}
 
 
-def _raw_rule_to_config(rule_dict: dict) -> ApprovalRuleConfig:
-    """Convert a raw YAML approval rule dict into an ApprovalRuleConfig."""
-    return ApprovalRuleConfig(
-        tool_name=rule_dict.get("tool_name"),
-        tool_source=rule_dict.get("tool_source"),
-        mcp_server=rule_dict.get("mcp_server"),
-        effect_class=rule_dict.get("effect_class"),
-        profile=rule_dict.get("profile"),
-        pattern=rule_dict.get("pattern"),
-        scope_key=rule_dict.get("scope_key"),
-        action=rule_dict.get("action", "require_approval"),
-    )
-
-
 def _has_rule_in_list(
     rule: ApprovalRuleConfig, rules: list[ApprovalRuleConfig]
 ) -> bool:
@@ -802,9 +758,15 @@ def build_approval_view(config, agent=None, builtin_tools=None) -> ApprovalView:
     workspace_raw = _load_raw_approval(ConfigLoader.WORKSPACE_CONFIG_PATH)
     global_raw = _load_raw_approval(ConfigLoader.GLOBAL_CONFIG_PATH)
 
-    builtin_rules = [_raw_rule_to_config(r) for r in DEFAULTS.get("approval_rules", [])]
-    workspace_rules = [_raw_rule_to_config(r) for r in workspace_raw.get("rules", [])]
-    global_rules = [_raw_rule_to_config(r) for r in global_raw.get("rules", [])]
+    builtin_rules = [
+        ApprovalRuleConfig.from_dict(r) for r in DEFAULTS.get("approval_rules", [])
+    ]
+    workspace_rules = [
+        ApprovalRuleConfig.from_dict(r) for r in workspace_raw.get("rules", [])
+    ]
+    global_rules = [
+        ApprovalRuleConfig.from_dict(r) for r in global_raw.get("rules", [])
+    ]
 
     if workspace_raw and "default_mode" in workspace_raw:
         default_mode_source = "workspace"
@@ -987,6 +949,3 @@ def build_approval_view(config, agent=None, builtin_tools=None) -> ApprovalView:
             ),
         ),
     )
-
-
-

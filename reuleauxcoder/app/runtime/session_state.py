@@ -10,6 +10,7 @@ from reuleauxcoder.app.runtime.approval import (
     merge_approval_config,
     refresh_approval_runtime,
 )
+from reuleauxcoder.app.runtime.model_profiles import apply_main_model_profile
 from reuleauxcoder.domain.agent.agent import Agent
 from reuleauxcoder.domain.config.models import (
     ApprovalConfig,
@@ -25,7 +26,6 @@ from reuleauxcoder.domain.session.models import (
 from reuleauxcoder.infrastructure.persistence.session_store import (
     DEFAULT_SESSION_FINGERPRINT,
 )
-from reuleauxcoder.services.llm.factory import reconfigure_llm_from_settings
 
 _LIVE_SNAPSHOT_DELAY_SECONDS = 0.15
 
@@ -395,19 +395,7 @@ def build_session_runtime_state(config: Config, agent: Agent) -> SessionRuntimeS
         active_sub_model_profile=getattr(agent, "active_sub_model_profile", None)
         or getattr(config, "active_sub_model_profile", None),
         skills_disabled=sorted(str(name) for name in disabled_names),
-        approval_rules=[
-            {
-                "tool_name": rule.tool_name,
-                "tool_source": rule.tool_source,
-                "mcp_server": rule.mcp_server,
-                "effect_class": rule.effect_class,
-                "profile": rule.profile,
-                "pattern": rule.pattern,
-                "scope_key": rule.scope_key,
-                "action": rule.action,
-            }
-            for rule in session_rules
-        ],
+        approval_rules=[rule.to_dict() for rule in session_rules],
         plan_state=(
             agent.plan_controller.state.to_dict()
             if hasattr(agent, "plan_controller")
@@ -430,18 +418,12 @@ def restore_config_runtime_defaults(config: Config, agent: Agent) -> None:
         config, "active_model_profile", None
     )
     if main_profile_name and main_profile_name in profiles:
-        profile = profiles[main_profile_name]
-        reconfigure_llm_from_settings(
-            agent.llm,
-            profile,
+        apply_main_model_profile(
+            config,
+            agent,
+            main_profile_name,
+            profiles[main_profile_name],
             debug_trace=getattr(config, "llm_debug_trace", False),
-        )
-        agent.context.reconfigure(
-            profile.max_context_tokens,
-            **resolve_context_strategies(
-                config.context,
-                getattr(profile, "context", None),
-            ),
         )
     else:
         agent.llm.debug_trace = getattr(config, "llm_debug_trace", False)
@@ -510,15 +492,8 @@ def apply_session_runtime_state(session: Session, config: Config, agent: Agent) 
 
     if runtime.approval_rules:
         session_rules = [
-            ApprovalRuleConfig(
-                tool_name=rule.get("tool_name"),
-                tool_source=rule.get("tool_source"),
-                mcp_server=rule.get("mcp_server"),
-                effect_class=rule.get("effect_class"),
-                profile=rule.get("profile"),
-                pattern=rule.get("pattern"),
-                scope_key=rule.get("scope_key"),
-                action=rule.get("action", config.approval.default_mode),
+            ApprovalRuleConfig.from_dict(
+                rule, default_action=config.approval.default_mode
             )
             for rule in runtime.approval_rules
         ]
@@ -530,20 +505,7 @@ def apply_session_runtime_state(session: Session, config: Config, agent: Agent) 
     main_profile = runtime.active_main_model_profile
     profiles = getattr(config, "model_profiles", {}) or {}
     if main_profile and main_profile in profiles:
-        profile = profiles[main_profile]
-        reconfigure_llm_from_settings(
-            agent.llm,
-            profile,
-            debug_trace=agent.llm.debug_trace,
-        )
-        agent.context.reconfigure(
-            profile.max_context_tokens,
-            **resolve_context_strategies(
-                config.context,
-                getattr(profile, "context", None),
-            ),
-        )
-        agent.active_main_model_profile = main_profile
+        apply_main_model_profile(config, agent, main_profile, profiles[main_profile])
     elif runtime.model:
         agent.llm.model = runtime.model
         agent.active_main_model_profile = None

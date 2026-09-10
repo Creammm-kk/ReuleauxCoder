@@ -1,3 +1,5 @@
+import pytest
+
 from reuleauxcoder.domain.config.models import (
     ApprovalConfig,
     ApprovalRuleConfig,
@@ -13,6 +15,47 @@ from reuleauxcoder.domain.config.models import (
     UIConfig,
     resolve_context_strategies,
 )
+
+
+def test_approval_rule_serialization_preserves_snapshot_and_compact_formats() -> None:
+    rule = ApprovalRuleConfig(tool_name="shell", pattern="", action="warn")
+    snapshot = {
+        "tool_name": "shell",
+        "tool_source": None,
+        "mcp_server": None,
+        "effect_class": None,
+        "profile": None,
+        "pattern": "",
+        "scope_key": None,
+        "action": "warn",
+    }
+    compact = {"tool_name": "shell", "pattern": "", "action": "warn"}
+
+    assert rule.to_dict() == snapshot
+    assert rule.to_dict(omit_none=True) == compact
+    assert ApprovalRuleConfig.from_dict(snapshot) == rule
+    assert ApprovalRuleConfig.from_dict(compact) == rule
+
+
+@pytest.mark.parametrize(
+    ("data", "default_action", "expected_action"),
+    [
+        ({}, None, "require_approval"),
+        ({}, "warn", "warn"),
+        ({"action": "deny"}, "allow", "deny"),
+        ({"action": None}, "warn", None),
+    ],
+)
+def test_approval_rule_parsing_preserves_missing_and_explicit_actions(
+    data, default_action, expected_action
+) -> None:
+    rule = ApprovalRuleConfig.from_dict(
+        {**data, "scope_key": "workspace-session", "unknown_field": "ignored"},
+        default_action=default_action,
+    )
+
+    assert rule.action == expected_action
+    assert rule.scope_key == "workspace-session"
 
 
 def test_context_config_enables_all_automatic_strategies_by_default() -> None:

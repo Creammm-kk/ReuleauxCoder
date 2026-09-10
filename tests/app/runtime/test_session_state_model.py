@@ -2,15 +2,20 @@
 
 from types import SimpleNamespace
 
+import pytest
+
 from reuleauxcoder.app.runtime.session_state import (
     apply_session_runtime_state,
     build_session_runtime_state,
+    restore_config_runtime_defaults,
 )
 from reuleauxcoder.domain.config.models import (
     ApprovalConfig,
     ApprovalRuleConfig,
     ContextConfig,
     ContextStrategyOverrides,
+    ResponsesCacheConfig,
+    ResponsesConfig,
 )
 
 
@@ -96,10 +101,16 @@ def _agent(model: str = "base-model") -> SimpleNamespace:
     )
 
 
-def test_runtime_state_round_trip_restores_switched_profile() -> None:
+@pytest.mark.parametrize("debug_trace", [False, True])
+def test_runtime_state_round_trip_restores_switched_profile(debug_trace) -> None:
     config = _config()
+    profile = config.model_profiles["sonnet"]
+    profile.request_mode = "responses"
+    profile.responses = ResponsesConfig(cache=ResponsesCacheConfig(mode="explicit"))
+    config.llm_debug_trace = not debug_trace
 
     source = _agent(model="model-sonnet")
+    source.llm.debug_trace = debug_trace
     source.active_main_model_profile = "sonnet"
     state = build_session_runtime_state(config, source)
     assert state.active_main_model_profile == "sonnet"
@@ -118,9 +129,33 @@ def test_runtime_state_round_trip_restores_switched_profile() -> None:
     assert restored.llm.model == "model-sonnet"
     assert restored.llm.reconfigured_with is not None
     assert restored.llm.reconfigured_with["api_key"] == "sk-test"
+    assert restored.llm.reconfigured_with["debug_trace"] is debug_trace
+    assert restored.llm.reconfigured_with["request_mode"] == "responses"
+    assert restored.llm.reconfigured_with["responses_cache_mode"] == "explicit"
     assert restored.active_main_model_profile == "sonnet"
     assert restored.context.max_tokens == 100_000
     assert restored.context.strategy_settings == {
+        "auto_snip": False,
+        "auto_summarize": False,
+        "auto_collapse": True,
+    }
+
+
+@pytest.mark.parametrize("debug_trace", [False, True])
+def test_fresh_session_uses_config_profile_and_debug_defaults(debug_trace) -> None:
+    config = _config()
+    config.active_main_model_profile = "sonnet"
+    config.llm_debug_trace = debug_trace
+    agent = _agent()
+    agent.llm.debug_trace = not debug_trace
+
+    restore_config_runtime_defaults(config, agent)
+
+    assert agent.active_main_model_profile == "sonnet"
+    assert agent.llm.model == "model-sonnet"
+    assert agent.llm.reconfigured_with["debug_trace"] is debug_trace
+    assert agent.context.max_tokens == 100_000
+    assert agent.context.strategy_settings == {
         "auto_snip": False,
         "auto_summarize": False,
         "auto_collapse": True,

@@ -367,16 +367,7 @@ class ConfigLoader:
             )
 
         approval_rules = [
-            ApprovalRuleConfig(
-                tool_name=rule.get("tool_name"),
-                tool_source=rule.get("tool_source"),
-                mcp_server=rule.get("mcp_server"),
-                effect_class=rule.get("effect_class"),
-                profile=rule.get("profile"),
-                pattern=rule.get("pattern"),
-                scope_key=rule.get("scope_key"),
-                action=rule.get("action", "require_approval"),
-            )
+            ApprovalRuleConfig.from_dict(rule)
             for rule in approval_config.get("rules", DEFAULTS["approval_rules"])
         ]
 

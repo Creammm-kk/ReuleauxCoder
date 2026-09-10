@@ -112,14 +112,4 @@ class WorkspaceConfigStore:
     @staticmethod
     def approval_rule_to_dict(rule: ApprovalRuleConfig) -> dict:
         """Serialize an approval rule, dropping empty fields."""
-        data = {
-            "tool_name": rule.tool_name,
-            "tool_source": rule.tool_source,
-            "mcp_server": rule.mcp_server,
-            "effect_class": rule.effect_class,
-            "profile": rule.profile,
-            "pattern": rule.pattern,
-            "scope_key": rule.scope_key,
-            "action": rule.action,
-        }
-        return {k: v for k, v in data.items() if v is not None}
+        return rule.to_dict(omit_none=True)

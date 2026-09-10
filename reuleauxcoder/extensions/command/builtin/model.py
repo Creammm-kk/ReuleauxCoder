@@ -26,13 +26,13 @@ from reuleauxcoder.app.commands.shared import (
     slash_trigger,
 )
 from reuleauxcoder.app.commands.specs import ActionSpec, DuringTurnPolicy
+from reuleauxcoder.app.runtime.model_profiles import apply_main_model_profile
 from reuleauxcoder.app.runtime.session_state import build_session_runtime_state
 from reuleauxcoder.domain.config.models import resolve_context_strategies
 from reuleauxcoder.infrastructure.persistence.workspace_config_store import (
     WorkspaceConfigStore,
 )
 from reuleauxcoder.interfaces.events import UIEventKind
-from reuleauxcoder.services.llm.factory import reconfigure_llm_from_settings
 
 
 @dataclass(frozen=True, slots=True)
@@ -163,25 +163,6 @@ def _resolve_profile(ctx, profile_name: str):
     return profile
 
 
-def _apply_main_profile_to_runtime(ctx, profile_name: str, profile) -> None:
-    debug_trace = getattr(
-        ctx.agent.llm, "debug_trace", getattr(ctx.config, "llm_debug_trace", False)
-    )
-    reconfigure_llm_from_settings(
-        ctx.agent.llm,
-        profile,
-        debug_trace=debug_trace,
-    )
-    ctx.agent.context.reconfigure(
-        profile.max_context_tokens,
-        **resolve_context_strategies(
-            ctx.config.context,
-            getattr(profile, "context", None),
-        ),
-    )
-    ctx.agent.active_main_model_profile = profile_name
-
-
 def _refresh_model_view(ctx) -> ModelListViewModel:
     view = _build_model_profiles_view(
         ctx.config,
@@ -202,7 +183,7 @@ def _handle_switch_model(command, ctx) -> CommandEffect:
     if profile is None:
         return ctx.effect.finish(control="continue")
 
-    _apply_main_profile_to_runtime(ctx, profile_name, profile)
+    apply_main_model_profile(ctx.config, ctx.agent, profile_name, profile)
     view = _refresh_model_view(ctx)
     ctx.effect.success(
         f"Switched session main model profile to '{profile_name}' ({profile.model})",
@@ -256,7 +237,7 @@ def _handle_set_main_model(command, ctx) -> CommandEffect:
     ctx.config.max_context_tokens = profile.max_context_tokens
     path = WorkspaceConfigStore().save_active_model_profile(profile_name)
 
-    _apply_main_profile_to_runtime(ctx, profile_name, profile)
+    apply_main_model_profile(ctx.config, ctx.agent, profile_name, profile)
     view = _refresh_model_view(ctx)
     ctx.effect.success(
         f"Set global main model profile to '{profile_name}' ({profile.model}) and saved to {path}",

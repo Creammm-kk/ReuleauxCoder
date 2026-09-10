@@ -1,6 +1,6 @@
 """Configuration models - domain layer configuration abstractions."""
 
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field, fields
 from typing import Literal, Optional
 
 
@@ -253,6 +253,27 @@ class ApprovalRuleConfig:
     pattern: Optional[str] = None
     scope_key: Optional[str] = None
     action: ApprovalAction = "require_approval"
+
+    def to_dict(self, *, omit_none: bool = False) -> dict:
+        """Serialize the rule, retaining null fields for session snapshots."""
+        data = asdict(self)
+        return {
+            name: value
+            for name, value in data.items()
+            if not omit_none or value is not None
+        }
+
+    @classmethod
+    def from_dict(
+        cls, data: dict, *, default_action: ApprovalAction | None = None
+    ) -> "ApprovalRuleConfig":
+        """Read known fields, allowing session policy to supply a missing action."""
+        values = {
+            item.name: data[item.name] for item in fields(cls) if item.name in data
+        }
+        if "action" not in values and default_action is not None:
+            values["action"] = default_action
+        return cls(**values)
 
 
 @dataclass
