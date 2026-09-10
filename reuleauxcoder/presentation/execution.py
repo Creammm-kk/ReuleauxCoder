@@ -468,71 +468,6 @@ def execution_panel_view(
     )
 
 
-def execution_panel_lines(
-    state: ExecutionViewState,
-    *,
-    width: int,
-    now: float | None = None,
-    expanded: bool = False,
-) -> tuple[str, ...]:
-    """Compatibility/plain-text projection backed by the structured view."""
-    width = max(20, width)
-    view = execution_panel_view(state, now=now)
-    plan_count = f"{view.plan_completed}/{view.plan_total}" if view.plan_total else "—"
-    live = "LIVE" if view.is_live else "IDLE"
-    need = f" · NEED {len(view.attention)}" if view.attention else ""
-    if width < 60:
-        final = (
-            f"NEED  ! {view.attention[0].title}"
-            if view.attention
-            else _agent_line(view.subagents[0])
-            if view.subagents
-            else f"MAIN  {view.main.marker} {view.main.activity or 'ready'}"
-        )
-        return (
-            _fit(
-            f"{view.phase} · PLAN {plan_count} · A {len(view.subagents)} · "
-            f"P {view.process_running}{need}",
-                width,
-            ),
-            _fit(f"PLAN  {'●' if view.plan_total else '○'} {view.active_plan}", width),
-            _fit(final, width),
-        )
-
-    lines = [
-        _fit(
-            f"STATUS  {view.phase} · PLAN {plan_count} · "
-            f"AGENTS {len(view.subagents)} · PROCESSES {view.process_running}"
-            f"{f' + {view.process_unknown} unknown' if view.process_unknown else ''}"
-            f" · {live}{need}",
-            width,
-        ),
-        _fit(f"PLAN  {'●' if view.plan_total else '○'} {view.active_plan}", width),
-        _fit(f"MAIN  {view.main.marker} {view.main.activity or 'ready'}", width),
-    ]
-    if view.attention:
-        child = f" · SUB {_agent_line(view.subagents[0])}" if view.subagents else ""
-        lines.append(_fit(f"NEED  ! {view.attention[0].title}{child}", width))
-    elif view.subagents:
-        lines.append(_fit(f"SUB   {_agent_line(view.subagents[0])}", width))
-    else:
-        next_step = view.progress_next or view.progress_summary or "ready"
-        lines.append(_fit(f"NEXT  {next_step}", width))
-
-    if expanded:
-        for item in view.plan:
-            marker = {
-                "completed": "✓",
-                "in_progress": "●",
-                "pending": "○",
-            }.get(item.status, "○")
-            label = item.active_form if item.status == "in_progress" else item.step
-            lines.append(_fit(f"PLAN  {marker} {label}", width))
-        for agent in view.subagents:
-            lines.append(_fit(f"SUB   {_agent_line(agent)}", width))
-    return tuple(lines)
-
-
 def _panel_agent(agent: ExecutionAgentState, *, now: float) -> ExecutionPanelAgent:
     marker = (
         ("◐", "◓", "◑", "◒")[int(now * 8) % 4]
@@ -561,17 +496,6 @@ def _panel_agent(agent: ExecutionAgentState, *, now: float) -> ExecutionPanelAge
         marker=marker,
         is_subagent=agent.is_subagent,
     )
-
-
-def _agent_line(agent: ExecutionPanelAgent) -> str:
-    task = agent.task or "working"
-    activity = f" · {agent.activity}" if agent.activity else ""
-    budget = f" · {agent.budget}" if agent.budget else ""
-    return f"{agent.marker} {agent.label}  {task}{activity}{budget}"
-
-
-def _fit(text: str, width: int) -> str:
-    return text if len(text) <= width else text[: max(1, width - 1)] + "…"
 
 
 def _short_agent_label(agent_id: str) -> str:

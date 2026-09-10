@@ -79,10 +79,8 @@ def test_command_frontends_depend_on_contracts_without_dispatch_or_storage():
     )
     paths = [
         ROOT / "reuleauxcoder/interfaces/cli/repl.py",
-        ROOT / "reuleauxcoder/interfaces/tui/application.py",
-        ROOT / "reuleauxcoder/interfaces/tui/selection_host.py",
-        ROOT / "reuleauxcoder/interfaces/tui/command_popup.py",
-        ROOT / "reuleauxcoder/interfaces/tui/input_router.py",
+        ROOT / "reuleauxcoder/interfaces/cli/input.py",
+        ROOT / "reuleauxcoder/interfaces/cli/details.py",
     ]
     for path in paths:
         assert not any(name.startswith(forbidden) for name in _imports(path)), path

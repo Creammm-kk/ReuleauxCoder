@@ -14,7 +14,6 @@ from reuleauxcoder.domain.runtime.events import (
 )
 from reuleauxcoder.presentation.execution import (
     ExecutionViewReducer,
-    execution_panel_lines,
     execution_panel_view,
 )
 
@@ -118,7 +117,7 @@ def test_operation_phase_projects_exact_activity_and_elapsed_time() -> None:
     assert "Ctrl+C cancels" in view.main.activity
 
 
-def test_attention_and_width_aware_projection() -> None:
+def test_attention_lasts_until_approval_resolves() -> None:
     reducer = ExecutionViewReducer()
     reducer.apply(
         _event(
@@ -126,12 +125,9 @@ def test_attention_and_width_aware_projection() -> None:
             event_id="ask",
         )
     )
-    wide = execution_panel_lines(reducer.state, width=100, now=100.1)
-    narrow = execution_panel_lines(reducer.state, width=40, now=100.1)
-    assert "NEED 1" in wide[0]
-    assert any("Review file edit" in line for line in wide)
-    assert len(narrow) == 3
-    assert all(len(line) <= 40 for line in narrow)
+    view = execution_panel_view(reducer.state, now=100.1)
+    assert len(view.attention) == 1
+    assert view.attention[0].title == "Review file edit"
 
     reducer.apply(_event(ApprovalResolved("approval-1", True), event_id="resolved"))
     assert not reducer.state.attention
@@ -190,13 +186,9 @@ def test_process_events_project_running_and_unknown_without_guessing_completion(
     )
 
     view = execution_panel_view(reducer.state, now=100.1)
-    rendered = "\n".join(
-        execution_panel_lines(reducer.state, width=120, now=100.1)
-    )
 
     assert view.process_running == 1
     assert view.process_unknown == 1
-    assert "PROCESSES 1 + 1 unknown" in rendered
     assert reducer.state.processes["proc_running"].output_tail == (
         "stdout: ready",
     )
@@ -224,16 +216,16 @@ def test_panel_animates_only_inside_real_event_lease() -> None:
         _event(ToolCallStarted("tc", "shell", {"command": "tests"}), event_id="tool")
     )
 
-    first = execution_panel_lines(reducer.state, width=100, now=100.1)
-    second = execution_panel_lines(reducer.state, width=100, now=100.4)
-    expired = execution_panel_lines(reducer.state, width=100, now=101.1)
+    first = execution_panel_view(reducer.state, now=100.1)
+    second = execution_panel_view(reducer.state, now=100.4)
+    expired = execution_panel_view(reducer.state, now=101.1)
 
     assert first != second
-    assert any(marker in "\n".join(first) for marker in ("◐", "◓", "◑", "◒"))
-    assert not any(marker in "\n".join(expired) for marker in ("◐", "◓", "◑", "◒"))
+    assert first.main.marker in ("◐", "◓", "◑", "◒")
+    assert expired.main.marker not in ("◐", "◓", "◑", "◒")
 
 
-def test_panel_expands_plan_only_when_details_are_requested() -> None:
+def test_panel_view_keeps_full_plan_and_active_summary() -> None:
     reducer = ExecutionViewReducer()
     reducer.apply(
         _event(
@@ -252,14 +244,10 @@ def test_panel_expands_plan_only_when_details_are_requested() -> None:
         )
     )
 
-    expanded = execution_panel_lines(reducer.state, width=100, now=100.5, expanded=True)
-    collapsed = execution_panel_lines(reducer.state, width=100, now=100.5)
-
-    assert any("done step" in line for line in expanded)
-    assert any("working actively" in line for line in expanded)
-    assert not any("done step" in line for line in collapsed)
-    assert any("working actively" in line for line in collapsed)
-    assert len(collapsed) == 4
+    view = execution_panel_view(reducer.state, now=100.5)
+    assert view.plan[0].step == "done step"
+    assert view.plan[1].active_form == "working actively"
+    assert view.active_plan == "working actively"
 
 
 def test_subagent_panel_shows_live_activity_budget_and_blocker() -> None:
@@ -282,13 +270,11 @@ def test_subagent_panel_shows_live_activity_budget_and_blocker() -> None:
             agent_id="main",
         )
     )
-    lines = execution_panel_lines(reducer.state, width=140, now=100.1)
-    rendered = "\n".join(lines)
-
-    assert "inspect parser" in rendered
-    assert "running lsp" in rendered
-    assert "tools 4/20 · tok 1200/8000" in rendered
-    assert "LIVE" in lines[0]
+    view = execution_panel_view(reducer.state, now=100.1)
+    assert view.subagents[0].task == "inspect parser"
+    assert view.subagents[0].activity == "running lsp"
+    assert view.subagents[0].budget == "tools 4/20 · tok 1200/8000"
+    assert view.is_live
 
 
 def test_subagent_lifecycle_and_worker_events_share_one_panel_row() -> None:
@@ -359,8 +345,8 @@ def test_terminal_subagent_remains_until_next_subagent_starts() -> None:
 
     assert "sj_old" in reducer.state.agents
     assert any(
-        "old task" in line
-        for line in execution_panel_lines(reducer.state, width=100, now=101.0)
+        agent.task == "old task"
+        for agent in execution_panel_view(reducer.state, now=101.0).subagents
     )
 
     reducer.apply(

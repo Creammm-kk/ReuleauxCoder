@@ -47,7 +47,7 @@ def test_obsolete_decorator_view_registry_is_removed() -> None:
 
 
 def test_tui_application_does_not_own_command_panel_business_types() -> None:
-    source = (ROOT / "reuleauxcoder/interfaces/tui/application.py").read_text(
+    source = (ROOT / "reuleauxcoder-tui/src/state/controller.ts").read_text(
         encoding="utf-8"
     )
 

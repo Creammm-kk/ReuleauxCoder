@@ -43,7 +43,6 @@ from reuleauxcoder.presentation.execution import (
     ExecutionPlanItem,
     ExecutionViewReducer,
     ExecutionViewState,
-    execution_panel_lines,
     execution_panel_view,
 )
 
@@ -55,7 +54,6 @@ __all__ = [
     "ExecutionPlanItem",
     "ExecutionViewReducer",
     "ExecutionViewState",
-    "execution_panel_lines",
     "execution_panel_view",
     "ApprovalCell",
     "AssistantCell",
