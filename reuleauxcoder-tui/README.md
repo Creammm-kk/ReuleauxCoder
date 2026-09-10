@@ -35,22 +35,38 @@ bundle 包含运行时依赖及 Yoga WASM，附带第三方许可证；构建工
 
 ## 主题
 
-界面采用统一的终端工作台风格：顶部品牌色带、SESSION 会话区，以及共用底部空间的 COMMANDS / REVIEW / YOU 操作区。横向分隔线和左侧色轨区分层级；强调色指引当前操作，审批使用提醒色。选中项的标题与说明共享底色，聊天记录使用一致的角色标记，长内容仍可展开。窄窗口自动收紧布局。
+默认采用琥珀工作台风格：顶部品牌与状态、左侧会话和带完整细边的输入框、宽屏右侧信息栏。琥珀色指引输入和当前操作，灰青色标记模型回复与运行活动，低对比度细线区分层级。菜单选中项使用底色，审批使用提醒色。当前版本使用纯色背景，未加入雾光。
+
+终端至少 120 列、20 行时自动显示 30–36 列侧栏，主区至少保留 85 列。侧栏按需展示计划、子 Agent 和后台进程活动、模型与上下文用量；长计划优先展示当前步骤，更多内容通过 F2 查看。窗口变窄或变矮时侧栏收起，草稿和交互保留。侧栏直接使用会话状态，完整信息始终可在 F2 会话详情中查看。
+
+侧栏先按优先级放摘要：待审批／冲突／错误 → 当前执行 → 计划当前步骤 → Git → 上下文、模型、模式和默认审批策略 → 子 Agent／进程。剩余高度再展开活动详情、Git 文件、更多计划步骤和用量；F2 保留完整数据。
+
+Git 文件列表最多显示 4 个，剩余数量显示为 `and N more · F2`；空间不足时进一步收起，F2 保留全部已读取的文件。
+
+Git 每 5 秒通过 JSON-RPC 读取后端工作区，复用后端有时间和输出上限的 Git 执行器，不消费模型的提交变化提示。显示分支或 detached HEAD、upstream 的本地 ahead/behind、变更数量、暂存／未暂存／未跟踪文件及冲突。文件旁两列状态分别表示暂存区和工作区（`.` 表示无变化，`?` 表示未跟踪）；同一文件可能同时有暂存和未暂存修改。增删行数为已跟踪文本文件相对 HEAD 的净变化，不包含未跟踪文件和二进制内容；无初始提交或统计失败时省略。扫描超限明确标记为不完整。不会自动 fetch；SSH 后端显示后端仓库，未提供 Git 监视器的后端不显示 Git 区。
+
+颜色角色统一为：`accent` 琥珀色表示操作／当前步骤，`secondary` 灰青色表示模型／运行状态，`info` 浅蓝色表示元数据／文件路径，`success` 表示成功或新增，`error` 表示拒绝／错误／删除，`warning` 表示待处理事项，`muted` 表示辅助说明。正文保留中性颜色。
 
 ```sh
+rcoder-tui --theme workbench
 node reuleauxcoder-tui/dist/cli.js --theme ocean
 node reuleauxcoder-tui/dist/cli.js --theme ember
 node reuleauxcoder-tui/dist/cli.js --theme /path/to/theme.json
 ```
 
-内置 `terminal`（默认，使用终端自身配色）、`ocean`（冷蓝）、`ember`（暖琥珀）。后两种适合深色终端；窗口背景和正文颜色由终端控制。
+内置 `workbench`（默认，炭灰底色、琥珀与灰青双色）、`terminal`（使用终端自身配色）、`ocean`（冷蓝）、`ember`（暖琥珀）。`workbench` 设置界面背景和正文色，其余预设沿用终端背景和正文色。可用 `--theme terminal` 切回终端原生配色。
 
 项目默认主题保存在前端工作目录的 `.rcoder/tui-theme.json`。可以直接写 `"ember"`，也可以继承主题并覆盖颜色：
 
 ```json
 {
-  "extends": "ocean",
+  "extends": "workbench",
   "accent": "#80CBC4",
+  "secondary": "#93B8AC",
+  "info": "#9FBAD6",
+  "border": "#46524F",
+  "foreground": "#DEDCD3",
+  "background": "#191D1E",
   "muted": "#8B98AA",
   "success": "#A8C977",
   "warning": "#E8BA70",
@@ -60,7 +76,7 @@ node reuleauxcoder-tui/dist/cli.js --theme /path/to/theme.json
 }
 ```
 
-颜色支持 `#RRGGBB`，以及 `black`、`red`、`green`、`yellow`、`blue`、`magenta`、`cyan`、`white`、`gray`、`default`。`muted: "default"` 使用终端弱化样式。优先级为 `--theme` > 项目主题文件 > `terminal`，启动时读取；错误配置会给出文件和字段信息。主题定义与配色逻辑集中在 `src/ui/theme.ts`，加载逻辑在 `theme-config.ts`。
+颜色支持 `#RRGGBB`，以及 `black`、`red`、`green`、`yellow`、`blue`、`magenta`、`cyan`、`white`、`gray`、`default`。`muted: "default"` 使用终端弱化样式；背景和正文设置为 `default` 时沿用终端颜色。优先级为 `--theme` > 项目主题文件 > `workbench`。已有的自定义对象如果省略 `extends`，仍继承 `terminal`，新增色号无需补填。启动时读取配置；错误配置会给出文件和字段信息。主题定义与配色逻辑集中在 `src/ui/theme.ts`，加载逻辑在 `theme-config.ts`。
 
 ## 交互
 
@@ -98,6 +114,8 @@ node reuleauxcoder-tui/dist/cli.js --theme /path/to/theme.json
 
 ### 快捷键
 
+审批区的“批准一次”使用灰青底色，拒绝使用红色，范围和反馈按键使用琥珀色。窄屏按完整操作项换行，翻页提示与位置放在面板标题右侧；普通菜单、表单和文档采用同一套按键引导色。
+
 | 按键 | 功能 |
 | --- | --- |
 | Enter | 发送、进入菜单、确认选择 |
@@ -118,6 +136,8 @@ node reuleauxcoder-tui/dist/cli.js --theme /path/to/theme.json
 F4 作用于当前会话中所有已保留的记录：展开工具调用参数、完整收到的 stdout/stderr、diff、诊断与归档信息；显示模型已返回的 reasoning。再按一次恢复工具摘要和折叠视图。展开后可以用 PgUp/PgDn 查看前面的内容。快捷键说明统一放在输入栏下方，顶部显示当前是否处于详细视图。
 
 紧凑视图把连续工具调用合为一组，显示数量和最新工具的一行摘要；读取类使用后端提供的行数、字符数或匹配数，不显示正文。shell 执行时仅预览最后 3 行，结束后收起。并行调用优先显示仍在运行的工具，失败摘要持续保留。模型的可见说明会分隔工具组，隐藏的 reasoning 不占位也不打断分组。F4 按原始顺序展开全部记录，折叠不会删除内容。
+
+会话滚动到底部后自动恢复跟随最新输出，History 提示消失，底部恢复常规快捷键。
 
 展开的 reasoning 使用 Markdown 渲染，保留标题、列表、代码和主题配色，整体降低亮度，与正式回答区分。
 

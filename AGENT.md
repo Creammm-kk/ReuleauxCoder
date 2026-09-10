@@ -100,6 +100,8 @@ Output retention is tool-directed through `ToolRetentionHint`: read uses head/an
 
 The independent React TUI lives in `reuleauxcoder-tui/`. Its protocol client owns framing and reverse interactions; state reducers retain complete content and drafts; React renders cached visible rows. The frontend derives menu groups and primitive form fields from the backend catalog, and consumes command-owned panel trees. Slash input selects a top-level menu. F2 exposes session/plan/job/startup facts; F4 expands reasoning and full structured tool output. The launcher owns a stdio backend process, with `--backend` supporting an SSH subprocess. See its README for parity, controls and verification.
 
+The default TUI workbench theme uses amber controls, sage activity and blue metadata. Wide terminals show a height-budgeted sidebar: attention, execution, plan and Git summaries precede session and activity details. Git facts come from the backend's `runtime.git` RPC every five seconds, using the existing bounded Git executor without consuming model-facing HEAD-change notices. F2 retains the full received snapshot; local upstream counts do not trigger network fetches. Approval actions wrap as whole items and paging information stays in the panel header.
+
 The CLI is split by responsibility:
 
 - `interfaces/cli/repl.py`: JSON-RPC submission, interaction handoff and session lifecycle.

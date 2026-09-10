@@ -71,6 +71,9 @@ with tempfile.TemporaryDirectory(prefix="rcoder-tui-pty-") as cwd:
     os.close(slave)
     try:
         read_until("Ready")
+        fcntl.ioctl(master, termios.TIOCSWINSZ, struct.pack("HHHH", 32, 140, 0, 0))
+        child.send_signal(signal.SIGWINCH)
+        read_until("WORKBENCH")
         os.write(master, b"/model")
         read_until("Commands")
         os.write(master, b"\r")

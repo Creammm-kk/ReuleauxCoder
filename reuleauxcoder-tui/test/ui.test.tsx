@@ -10,6 +10,10 @@ import {editor, edit} from '../src/state/editor.js';
 import {App} from '../src/ui/App.js';
 import {inputRows, TranscriptLayout} from '../src/ui/viewport.js';
 import {safe} from '../src/ui/format.js';
+import {panelRows} from '../src/ui/panels.js';
+import {sidebarRows} from '../src/ui/sidebar.js';
+import {paint} from '../src/ui/theme.js';
+import stringWidth from 'string-width';
 import {until, backend} from './helpers.js';
 
 test('real Ink input handles F keys, Unicode paste, menus, resize and secret masking', async t => {
@@ -41,6 +45,17 @@ test('real Ink input handles F keys, Unicode paste, menus, resize and secret mas
   assert(app.lastFrame()?.includes('中文'));
   c.resize(28, 90);
   await b.client.submit('exercise'); await until(() => c.active?.kind === 'review');
+  const review = panelRows(c, 38, 8)!;
+  assert(review.hint.includes(paint.action('y/Enter Approve once')));
+  assert(review.hint.includes(paint.error('n Reject')));
+  assert(review.navigation?.includes('PgUp/PgDn'));
+  assert(!safe(review.hint.join(' ')).includes('PgUp'));
+  c.resize(18, 40);
+  await until(() => safe(app.lastFrame() || '').includes('f feedback'));
+  assert(safe(app.lastFrame() || '').includes('Approve once'));
+  assert(safe(app.lastFrame() || '').includes('n Reject'));
+  assert(safe(app.lastFrame() || '').includes('s scope'));
+  c.resize(28, 90);
   app.stdin.write('n'); await until(() => c.active?.kind === 'confirm');
   app.stdin.write('n'); await until(() => c.active?.kind === 'choose_one');
   app.stdin.write('1'); await until(() => c.active?.kind === 'input_text');
@@ -123,6 +138,74 @@ test('scrolling to the bottom restores shortcuts and follows subsequent output',
   await until(() => app.lastFrame()?.includes('History '));
   c.resize(100, 80);
   await until(() => c.offset === null && !app.lastFrame()?.includes('History '));
+});
+
+test('workbench sidebar adapts to terminal size and preserves drafts and full session details', async t => {
+  const c = new TuiController(new RuntimeClient(new RpcPeer(new PassThrough(), new PassThrough())));
+  t.after(() => {c.client.peer.close(); c.dispose();});
+  c.session.connected = true;
+  c.session.state = {...c.session.state, model: 'gpt-sol', context_limit: 100000, context_tokens: 24000};
+  c.session.plan = {items: Array.from({length: 10}, (_, index) => ({step: `Task ${index}`, status: index < 6 ? 'completed' : index === 6 ? 'in_progress' : 'pending'}))};
+  c.session.jobs.set('test', {task: 'Test worker', status: 'running', activity: 'Running focused tests'});
+  c.composer = editor('中文草稿\nKeep this draft');
+  const app = render(<App controller={c}/>); t.after(() => app.cleanup());
+  await until(() => app.lastFrame()?.includes('Ready'));
+  c.resize(32, 140);
+  await until(() => app.lastFrame()?.includes('WORKBENCH'));
+  assert(app.lastFrame()?.includes('Task 6'), 'the current plan step remains visible');
+  assert(app.lastFrame()?.includes('Test worker'));
+  assert(app.lastFrame()?.includes('24%'));
+  assert(app.lastFrame()?.includes('╭'));
+  for (const [rows, columns] of [[24, 119], [24, 120], [12, 40], [32, 160]]) {
+    c.resize(rows, columns);
+    await until(() => Boolean(app.lastFrame()?.includes('WORKBENCH')) === (columns >= 120 && rows >= 20));
+    const frame = app.lastFrame()!;
+    assert(frame.split('\n').length <= rows - 1);
+    assert(frame.split('\n').every(row => stringWidth(row) <= columns));
+    assert(frame.includes('中文草稿'));
+    assert(frame.includes('Keep this draft'));
+  }
+  c.showSession();
+  assert(c.screen?.kind === 'document');
+  if (c.screen?.kind === 'document') {
+    assert(c.screen.body.includes('Task 0'));
+    assert(c.screen.body.includes('Task 9'));
+    assert(c.screen.body.includes('Running focused tests'));
+  }
+  assert.equal(c.composer.text, '中文草稿\nKeep this draft');
+});
+
+test('sidebar prioritizes attention and Git summaries before optional file and plan details', () => {
+  const c = new TuiController(new RuntimeClient(new RpcPeer(new PassThrough(), new PassThrough())));
+  c.session.connected = true;
+  c.session.state = {...c.session.state, running: true, context_tokens: 24000, context_limit: 100000, model: 'gpt-sol', mode: 'code', approval_policy: 'require_approval'};
+  c.session.plan = {items: [{step: 'Current task', status: 'in_progress'}, {step: 'Later task', status: 'pending'}]};
+  c.session.git = {available: true, branch: 'main', head: 'abc123', upstream: 'origin/main', ahead: 2, behind: 0, additions: 12, deletions: 4, truncated: false, reason: null,
+    files: [{path: 'conflict.txt', index: 'U', worktree: 'U', conflict: true}, {path: 'secret\x1b[2J.txt', index: '?', worktree: '?', conflict: false}, ...Array.from({length: 7}, (_, index) => ({path: `extra-${index}.txt`, index: '?', worktree: '?', conflict: false}))]};
+  const small = sidebarRows(c, 34, 16);
+  const text = safe(small.join('\n'));
+  assert.equal(small.length, 16);
+  assert(text.indexOf('ATTENTION') < text.indexOf('GIT'));
+  assert(text.includes('1 Git conflicts'));
+  assert(text.includes('Current task'));
+  assert(text.includes('9 changed'));
+  assert(text.includes('↑ 2 ahead'));
+  assert(text.includes('24%'));
+  assert(!text.includes('Later task'));
+  const tall = sidebarRows(c, 34, 40);
+  assert.equal(tall.length, 40);
+  assert(tall.every(row => stringWidth(row) <= 34));
+  assert(safe(tall.join('\n')).includes('conflict.txt'));
+  assert(safe(tall.join('\n')).includes('extra-1.txt'));
+  assert(!safe(tall.join('\n')).includes('extra-2.txt'));
+  assert(safe(tall.join('\n')).includes('and 5 more'));
+  assert(safe(tall.join('\n')).includes('Later task'));
+  assert(safe(tall.join('\n')).includes('Approval default Ask'));
+  assert(!tall.join('\n').includes('\x1b[2J'));
+  c.showSession();
+  assert(c.screen?.kind === 'document' && c.screen.body.includes('conflict.txt'));
+  assert(c.screen?.kind === 'document' && c.screen.body.includes('extra-6.txt'));
+  c.client.peer.close(); c.dispose();
 });
 
 test('Unicode editing and viewport folding retain complete output without terminal escapes', () => {
