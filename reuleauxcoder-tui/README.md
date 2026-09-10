@@ -21,7 +21,7 @@ node reuleauxcoder-tui/dist/cli.js --resume session-id
 node reuleauxcoder-tui/dist/cli.js --python /path/to/venv/bin/python
 ```
 
-开发时运行 `npm --prefix reuleauxcoder-tui run dev -- --cwd /path/to/project`。构建后的包也提供 `rcoder-tui` bin。当前 `rcoder` 入口仍使用原有界面。
+开发时运行 `npm --prefix reuleauxcoder-tui run dev -- --cwd /path/to/project`。构建后的包也提供 `rcoder-tui` bin。`rcoder` 入口使用终端原生滚屏的线性 CLI，同样经过 JSON-RPC。
 
 ## 主题
 

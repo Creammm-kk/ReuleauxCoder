@@ -5,9 +5,9 @@
 A terminal-native AI coding agent with a FORGE-styled CLI, scoped subagents,
 approvals, sessions, MCP, skills, LSP, and a thin remote execution peer.
 
-The v0.8.2 CLI uses a prompt_toolkit mini-TUI with a persistent execution panel,
-virtualized Markdown transcript, and focused approval/input pane. It shares framework-neutral
-presentation state with the future full TUI; no production Textual app is shipped yet.
+The CLI uses native terminal scrollback, Rich Markdown output and prompt_toolkit
+line editing. The independent React + Ink TUI lives in `reuleauxcoder-tui/`.
+Both frontends use the same JSON-RPC runtime for chat, slash commands and approvals.
 
 Inspired by and started as a complete rewrite of [CoreCoder](https://github.com/he-yufeng/CoreCoder).
 
@@ -80,7 +80,7 @@ npm --prefix reuleauxcoder-tui run build
 node reuleauxcoder-tui/dist/cli.js
 ```
 
-Use `--cwd /path/to/project` to choose a workspace. The existing `rcoder` entry point continues to use its original interface. See the frontend README for keyboard controls and SSH backends.
+Use `--cwd /path/to/project` to choose a workspace. The `rcoder` entry point runs the linear CLI. See the frontend README for TUI keyboard controls and SSH backends.
 
 ## Remote Bootstrap (Host/Peer)
 
@@ -220,14 +220,17 @@ All default to `true`. A model profile may override any switch under
 policy. Disabling an automatic strategy does not disable its manual
 `/compact force <strategy>` command.
 
-Interactive TTYs use the mini-TUI; one-shot, redirected, server, and remote-peer
-paths stay append-only. The CLI keeps model output and human presentation limits
-separate: shell output uses a rolling five-line human tail while the agent retains
-the full result subject to context policy. Timeout/cancel preserves partial output.
+The CLI uses terminal scrollback in every mode. Interactive line editing remains
+available during execution: additional prompts and deferred commands enter the
+backend queue, and approvals temporarily take over input while preserving the draft.
+Tab completes slash commands; Alt+Enter inserts a newline. F2 / Ctrl+O prints session,
+plan, job, startup and queued-input details; F4 prints retained tool arguments and full
+output; `/thinking` displays reasoning. Ctrl+C clears a draft or interrupts execution;
+with queued prompts, the first interrupt promotes them and a second requests a stop.
+Press it twice while idle, or use Ctrl+D / `/quit`, to save and exit.
+Live tool output is appended to scrollback; timeout/cancel preserves partial output.
 Write/edit approval uses a framed diff and refreshes if the saved file changes.
-Completed assistant cells render Rich Markdown semantics inside prompt_toolkit;
-streaming cells only format complete blocks. Static layout is cached by cell revision
-and terminal width, and the viewport paints only visible rows with sticky-bottom scroll.
+Assistant output renders as Markdown, formatting complete blocks while streaming.
 Sessions persist an append-only JSONL ledger, canonical replay state with
 wire-affecting settings, exact hook-transformed request audits, usage observations,
 Plan/Progress state, validated semantic checkpoints, and tool artifacts. Resume

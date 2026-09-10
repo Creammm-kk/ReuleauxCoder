@@ -1,6 +1,6 @@
 # Runtime protocol v1
 
-The CLI and mini-TUI are clients of a backend-owned session. They render events,
+The linear CLI and React TUI are clients of a backend-owned session. They render events,
 collect input and manage focus. The backend owns the agent, command registry,
 turn workers, deferred commands, steering, stop state, approvals and persistence.
 All built-in slash actions and panel actions pass through the same CommandService.

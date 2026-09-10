@@ -5,9 +5,9 @@
 终端原生 AI 编程助手，提供 FORGE 风格 CLI、隔离的 subagent、审批、会话、
 MCP、skills、LSP 与轻量远端执行 peer。
 
-v0.8.1 CLI 使用 prompt_toolkit mini-TUI，提供常驻执行面板、可滚动 transcript
-和集中审批/输入区域。它与未来完整 TUI 共用框架无关的 presentation state；
-当前仍未发布 Textual 完整 TUI。
+CLI 使用终端原生滚屏、Rich Markdown 输出和 prompt_toolkit 行编辑。
+独立 React + Ink TUI 位于 `reuleauxcoder-tui/`；两个前端共用 JSON-RPC
+运行时，消息、slash 命令和审批都经过同一协议边界。
 
 灵感来自并作为 [CoreCoder](https://github.com/he-yufeng/CoreCoder) 的完整重写而启动。
 
@@ -209,9 +209,13 @@ TypeScript 7 的 `tsc --lsp --stdio`，legacy 为 TypeScript 6 工作区使用
 `models.profiles.<name>.context` 下覆盖任意开关；未填写的字段继承全局策略。
 关闭自动策略不会禁用对应的 `/compact force <strategy>` 手动命令。
 
-交互式 TTY 使用 mini-TUI；one-shot、重定向、server 和远端 peer 保持 append-only。
-CLI 将模型上下文截断与人类界面折叠分开处理。Shell 运行时显示最近五行滑动窗口，
-完成后历史保留最后五行；超时或取消仍会把部分输出交给模型。write/edit 审批统一使用
+CLI 在所有模式下使用终端原生滚屏。执行中仍可输入：追加提示和延后执行的命令
+由后端排队；审批临时接管输入，结束后恢复草稿。Tab 补全命令，Alt+Enter 换行。
+F2 / Ctrl+O 打印会话、计划、任务、启动和排队输入详情；F4 打印保留的工具参数与
+完整结果；`/thinking` 查看思考内容。Ctrl+C 清空草稿或中断执行；有排队提示时，
+第一次推进提示，第二次请求停止。空闲时连按两次退出；
+Ctrl+D 或 `/quit` 也会保存并退出。工具实时输出直接追加到滚屏，超时或取消仍保留
+部分结果。write/edit 审批统一使用
 带框 diff；等待审批期间磁盘文件发生变化时会刷新预览并重新请求确认。
 会话会持久化 append-only JSONL 账本、含 wire settings 的 canonical replay、hook transform
 后的精确请求审计、实际 usage、Plan/Progress、validated semantic checkpoint 与工具 artifact；

@@ -5,7 +5,7 @@ This file describes the current repository, not a future design. Detailed design
 ## Current snapshot
 
 - Package version: `0.8.1`.
-- Primary shipped interface: prompt_toolkit-owned interactive mini-TUI; Rich remains the append-only renderer for one-shot, non-TTY, server and remote-peer paths.
+- Python interface: linear CLI with native terminal scrollback, Rich output and prompt_toolkit line editing over JSON-RPC.
 - Independent TUI: `reuleauxcoder-tui/` is a React + Ink frontend over stdio JSON-RPC, with top-level slash menus, backend-owned command panels and a persistent composer. Launch it with `node reuleauxcoder-tui/dist/cli.js` after building.
 - Remote peer: `reuleauxcoder-agent/`, a CLI-only Go peer.
 - Runtime supports sessions, approvals, hooks/extensions, skills, MCP, subagents, LSP, local/remote tools, streaming output, and context compression.
@@ -101,10 +101,9 @@ The independent React TUI lives in `reuleauxcoder-tui/`. Its protocol client own
 
 The CLI is split by responsibility:
 
-- `interfaces/tui/application.py`: prompt_toolkit layout/lifecycle, viewport and bottom interaction focus for interactive TTYs.
-- `interfaces/tui/event_adapter.py` and `event_queue.py`: bounded, thread-safe projection of runtime/UI events into retained TUI state.
-- `interfaces/tui/virtual_transcript.py`, `transcript.py`, `markdown_fragments.py`, and `transcript_cache.py`: virtualized transcript layout, retained Markdown rendering and width/revision caching.
-- `interfaces/tui/input_router.py`, `interaction.py`, `selection_host.py`, `selection_panel.py`, and `command_popup.py`: keyboard routing and interactive panels.
+- `interfaces/cli/repl.py`: JSON-RPC submission, interaction handoff and session lifecycle.
+- `interfaces/cli/input.py`: prompt_toolkit line editing, runtime output pumping and draft preservation.
+- `interfaces/cli/details.py`: restored conversation, session/execution facts and full tool output.
 - `interfaces/cli/render.py`: append-only event routing and compatibility entry points.
 - `history.py`: immutable history rows.
 - `streaming.py`: assistant content streaming.
@@ -119,16 +118,17 @@ The CLI is split by responsibility:
 
 Current CLI behavior:
 
-- interactive TTYs use a fixed top Execution Panel, virtualized transcript viewport and bottom input/review pane; F2 toggles startup/session details;
-- prompt_toolkit exclusively owns cursor, focus, SIGWINCH resize and alternate-screen lifecycle; worker threads only update source-backed reducers and invalidate the app;
-- non-TTY, `--prompt`, server and remote-peer paths remain append-only and never start the mini-TUI;
-- the bottom `YOU` lane uses a high-contrast background for user input; the append-only compatibility prompt still distinguishes slash commands as `CMD`.
+- every CLI mode uses native terminal scrollback; there is no alternate screen or retained viewport;
+- the interactive line prompt stays available while the backend runs; additional prompts and deferred commands use the runtime queues;
+- reverse RPC interactions temporarily replace the prompt and restore its draft afterwards; worker output is drained on the foreground thread while the prompt is suspended;
+- F2 / Ctrl+O prints session, execution, startup and queue details; F4 prints retained tool arguments and full output; `/thinking` displays full reasoning;
+- Tab completes catalog-derived slash commands and Alt+Enter inserts a newline; the prompt distinguishes `YOU` and `CMD` input.
 - write/edit approval previews share one framed diff renderer; additions/deletions use green/red backgrounds.
 - an approved write/edit does not print the identical diff again after execution.
 - if a file changes on disk while approval is pending, the preview is refreshed and approval is requested again.
 - unsaved editor buffers are not visible to the CLI; editor-buffer integration requires a future editor adapter.
-- panels and retained in-app transcript reflow on terminal resize. Ctrl+C clears input, cancels approval, requests a protocol-safe running-turn interrupt, or confirms exit according to focus.
-- completed assistant cells render Markdown; streaming cells only parse committed blocks. Static cell/layout caches are keyed by revision and width, and the viewport no longer paints a transcript-height off-screen canvas on every frame.
+- Ctrl+C clears input, cancels approval, interrupts a running turn, or confirms idle exit. Ctrl+D and `/quit` also save and exit.
+- assistant output renders Markdown, parsing complete blocks while streaming. Tool deltas append to scrollback during interactive input; one-shot and relay modes retain the transient activity renderer.
 
 ## Commands and interactions
 

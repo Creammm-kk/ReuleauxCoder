@@ -2,7 +2,7 @@
 
 命令功能放在 `reuleauxcoder/extensions/command/builtin/<feature>.py`。
 同一功能的参数模型、解析、处理、交互面板和注册声明应放在一起；
-CLI、当前 prompt_toolkit mini-TUI 和后续完整 TUI 共用这些行为。
+线性 CLI 和独立 React TUI 通过 JSON-RPC 共用这些行为。
 
 ## 当前结构
 
@@ -15,9 +15,9 @@ CLI、当前 prompt_toolkit mini-TUI 和后续完整 TUI 共用这些行为。
 | `app/commands/models.py` | `CommandContext`、`CommandEffect` 和视图请求 |
 | `app/commands/view_models.py` | CLI、TUI 与远端共用的结构化 ViewModel |
 | `app/commands/panels.py` | 框架无关的面板树、菜单项和刷新策略 |
-| `interfaces/tui/selection_host.py` | 当前 TUI 的选择、过滤、返回、焦点与命令提交 |
+| `reuleauxcoder-tui/src/state/controller.ts` | TUI 的选择、过滤、返回、焦点与命令提交 |
 | `interfaces/cli/views/` | Rich 文本展示适配 |
-| `interfaces/tui/view_text.py` | 当前 TUI 的非交互文本展示适配 |
+| `reuleauxcoder-tui/src/ui/` | TUI 的 React 展示适配 |
 
 注册使用显式贡献，不扫描包，不通过装饰器或导入副作用填充全局 ActionRegistry。
 
@@ -99,7 +99,7 @@ _CommandFeature(register_mode_actions, mode_panel_spec()),
 没有选择面板的功能只传注册器，例如 `_CommandFeature(register_system_actions)`。
 动作与面板的两个注册视图都从这份清单派生，保持显式、稳定的顺序。
 普通 CLI 的文本 renderer 仍注册在 `interfaces/cli/views/builtin.py`；
-当前 TUI 的文本展示仍由 `interfaces/tui/view_text.py` 适配。
+TUI 的文本展示由 `reuleauxcoder-tui/src/ui/` 适配。
 
 ## 执行策略与迁移边界
 
@@ -118,7 +118,8 @@ _CommandFeature(register_mode_actions, mode_panel_spec()),
 
 ```bash
 uv run pytest -q tests/app/commands tests/extensions/command
-uv run pytest -q tests/interfaces/tui/test_application.py tests/interfaces/tui/test_selection_panel.py
+uv run pytest -q tests/interfaces/cli tests/app/rpc
+npm --prefix reuleauxcoder-tui test
 uv run pytest -q tests/architecture
 ```
 
