@@ -1,6 +1,6 @@
 import type {Cell} from '../state/session.js';
 import {safe, wrap} from './format.js';
-import {paint} from './theme.js';
+import {fit, paint} from './theme.js';
 
 /** Folding is a projection: original records and their ordering stay intact. */
 export function transcriptGroups(cells: Cell[], expanded: boolean): Cell[][] {
@@ -55,5 +55,5 @@ export function toolGroupRows(cells: Cell[], width: number): string[] {
     const tail = safe(latest.body).trimEnd().split('\n').slice(-3).join('\n');
     rows.push(...wrap(tail, Math.max(1, width - 4)).slice(-3).map(row => paint.muted('  ▏ ' + row)));
   }
-  return [...rows, ''];
+  return [...rows.map((row, index) => index === 0 ? paint.panel(fit(row, width)) : row), ''];
 }

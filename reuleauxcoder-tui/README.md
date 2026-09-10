@@ -45,7 +45,9 @@ Git 文件列表最多显示 4 个，剩余数量显示为 `and N more · F2`；
 
 Git 每 5 秒通过 JSON-RPC 读取后端工作区，复用后端有时间和输出上限的 Git 执行器，不消费模型的提交变化提示。显示分支或 detached HEAD、upstream 的本地 ahead/behind、变更数量、暂存／未暂存／未跟踪文件及冲突。文件旁两列状态分别表示暂存区和工作区（`.` 表示无变化，`?` 表示未跟踪）；同一文件可能同时有暂存和未暂存修改。增删行数为已跟踪文本文件相对 HEAD 的净变化，不包含未跟踪文件和二进制内容；无初始提交或统计失败时省略。扫描超限明确标记为不完整。不会自动 fetch；SSH 后端显示后端仓库，未提供 Git 监视器的后端不显示 Git 区。
 
-颜色角色统一为：`accent` 琥珀色表示操作／当前步骤，`secondary` 灰青色表示模型／运行状态，`info` 浅蓝色表示元数据／文件路径，`success` 表示成功或新增，`error` 表示拒绝／错误／删除，`warning` 表示待处理事项，`muted` 表示辅助说明。正文保留中性颜色。
+界面采用像素 R 标识、整行执行状态色带、编号角色标签、方角代码框和贯穿全宽的输入区。至少 34 行、72 列时显示完整标识，较小窗口收起装饰；底部状态条从 26 行起显示。状态来自实际连接、运行阶段、模型、模式、计划与 Git 快照；导航使用现有 F2 / F4 / slash 操作。消息编号按会话中的用户和模型消息排列，展开工具和思考不会改变编号。
+
+颜色角色统一为：`accent` 琥珀色表示操作／当前步骤，`secondary` 灰青色表示模型输出，`info` 浅蓝色表示元数据／文件路径，`success` 表示成功或新增，`error` 表示拒绝／错误／删除，`warning` 表示待处理事项，`muted` 表示辅助说明。正文保留中性颜色。`panelBackground` 用于工具与队列色带，`additionBackground` / `deletionBackground` 用于 diff；这些背景也可独立配置。
 
 ```sh
 rcoder-tui --theme workbench
@@ -67,6 +69,9 @@ node reuleauxcoder-tui/dist/cli.js --theme /path/to/theme.json
   "border": "#46524F",
   "foreground": "#DEDCD3",
   "background": "#191D1E",
+  "panelBackground": "#242C2A",
+  "additionBackground": "#24382F",
+  "deletionBackground": "#3C2B2A",
   "muted": "#8B98AA",
   "success": "#A8C977",
   "warning": "#E8BA70",

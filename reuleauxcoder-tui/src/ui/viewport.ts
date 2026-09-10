@@ -26,9 +26,12 @@ export class TranscriptLayout {
     const parts: string[][] = [];
     const alive = new Set<string>();
     let total = 0;
+    let messageNumber = 0;
     for (const group of transcriptGroups(cells, expanded)) {
       const cell = group[0];
-      const revision = group.map(cell => `${cell.id}:${cell.revision}`).join(',');
+      const message = cell.kind === 'user' || cell.kind === 'assistant';
+      if (message) messageNumber++;
+      const revision = `${messageNumber}/` + group.map(cell => `${cell.id}:${cell.revision}`).join(',');
       alive.add(cell.id);
       let cached = this.cache.get(cell.id);
       if (!cached || cached.revision !== revision || cached.width !== width || cached.expanded !== expanded) {
@@ -38,15 +41,16 @@ export class TranscriptLayout {
           const content = expanded && cell.details
             ? cell.kind === 'tool' && !cell.tool?.outcome ? cell.details + '\n\n' + cell.body : cell.details
             : cell.body;
-          const body = cell.kind === 'reasoning' ? paint.dim(markdown(content))
-            : cell.kind === 'assistant' && !cell.streaming ? markdown(content) : cell.kind === 'tool' ? diff(content) : safe(content);
+          const body = cell.kind === 'reasoning' ? paint.dim(markdown(content, width - 2))
+            : cell.kind === 'assistant' && !cell.streaming ? markdown(content, width - 2) : cell.kind === 'tool' ? diff(content) : safe(content);
           const rows = wrap(body, Math.max(1, width - 2));
           const symbol = cell.streaming ? '◌' : cell.kind === 'user' ? '▸' : cell.kind === 'assistant' ? '◭' : cell.kind === 'tool' ? '↳' : '·';
           const label = cell.kind === 'user' ? cell.title === 'You' ? 'YOU' : safe(cell.title) : cell.kind === 'assistant' ? 'REULEAUX' : cell.kind === 'tool' ? `TOOL / ${safe(cell.title)}` : safe(cell.title);
           const title = `${symbol} ${label}`;
           const color = cell.tone === 'error' ? paint.error : cell.tone === 'warning' ? paint.warning : cell.kind === 'user' ? paint.accent : cell.kind === 'assistant' ? paint.secondary : cell.tone === 'success' ? paint.success : paint.muted;
           const indent = cell.kind === 'user' ? paint.accent('▏') + ' ' : cell.kind === 'tool' ? paint.muted('▏') + ' ' : '  ';
-          rendered = [line(color(title), width), ...rows.map(row => indent + row), ''];
+          const heading = message ? paint.badge(`${String(messageNumber).padStart(2, '0')} / ${label}`, cell.kind === 'user' ? 'accent' : 'secondary') : color(title);
+          rendered = [line(heading, width), ...rows.map(row => indent + row), ''];
         }
         cached = {revision, width, expanded, rows: rendered};
         this.cache.set(cell.id, cached);

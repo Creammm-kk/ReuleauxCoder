@@ -35,8 +35,10 @@ export function sidebarRows(c: TuiController, width: number, height: number): st
   const items = plan.items ?? [];
   const activeIndex = items.findIndex((item: any) => item.status === 'in_progress');
   const focus = activeIndex >= 0 ? activeIndex : items.findIndex((item: any) => item.status !== 'completed');
-  const planRow = (item: any) => (item.status === 'completed' ? paint.success : item.status === 'in_progress' ? paint.accent : paint.muted)(`${item.status === 'completed' ? '✓' : item.status === 'in_progress' ? '›' : '·'} ${compact(item.step)}`);
-  if (items.length) add('PLAN', [focus >= 0 ? planRow(items[focus]) : paint.success('✓ Plan completed')], items.filter((_: any, index: number) => index !== focus).map(planRow), paint.accent, 7, `${items.filter((item: any) => item.status === 'completed').length}/${items.length}`);
+  const planRow = (item: any, index: number) => item.status === 'in_progress'
+    ? paint.badge(fit(`[${String(index + 1).padStart(2, '0')}] ${compact(item.step)}`, width - 2))
+    : (item.status === 'completed' ? paint.success : paint.muted)(`${item.status === 'completed' ? '[✓]' : '[ ]'} ${compact(item.step)}`);
+  if (items.length) add('PLAN', [focus >= 0 ? planRow(items[focus], focus) : paint.success('✓ Plan completed')], items.map(planRow).filter((_: string, index: number) => index !== focus), paint.accent, 7, `${items.filter((item: any) => item.status === 'completed').length}/${items.length}`);
 
   if (git?.available) {
     const count = `${git.truncated ? '≥' : ''}${git.files.length}`;
@@ -62,7 +64,7 @@ export function sidebarRows(c: TuiController, width: number, height: number): st
   if (state.approval_policy) summary.push(valueRow('Approval default', ({require_approval: 'Ask', allow: 'Allow', warn: 'Warn', deny: 'Deny'} as Record<string, string>)[state.approval_policy] ?? state.approval_policy, paint.warning));
   const filled = Math.round(ratio * 12);
   add('SESSION', summary, [
-    ...(state.context_limit ? [contextColor('━'.repeat(filled)) + paint.border('─'.repeat(12 - filled))] : []),
+    ...(state.context_limit ? [contextColor('█'.repeat(filled)) + paint.border('░'.repeat(12 - filled))] : []),
     valueRow('Context tokens', number.format(state.context_tokens)),
     ...(state.mcp_tools ? [valueRow('MCP tools', String(state.mcp_tools))] : []),
   ], paint.secondary, 8);

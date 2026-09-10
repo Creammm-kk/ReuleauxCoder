@@ -1,7 +1,6 @@
 import type {RuntimeState} from '../protocol/wire.js';
 import {safe} from './format.js';
-import {line} from './viewport.js';
-import {paint, rail, section} from './theme.js';
+import {fit, paint, rail, section} from './theme.js';
 
 export function queuedRows(state: RuntimeState, width: number, height: number): string[] {
   const prompts = state.queued_steering;
@@ -15,11 +14,11 @@ export function queuedRows(state: RuntimeState, width: number, height: number): 
       if (index < items.length) entries.push({label: `${label} ${index + 1}`, text: items[index]});
     }
   }
-  if (height === 1) return [line(paint.accent(`Queued ${count} · `) + safe(prompts[0] ?? commands[0]).replace(/\s+/g, ' '), width)];
+  if (height === 1) return [paint.panel(fit(paint.accent(`↳ QUEUED ${count} · `) + safe(prompts[0] ?? commands[0]).replace(/\s+/g, ' '), width))];
   const visible = Math.min(count, height - 1);
   const detail = visible < count ? `+${count - visible} more · F2 all` : 'F2 full text';
   const rows = entries.slice(0, visible).map(entry => rail(
     (entry.label.startsWith('Command') ? paint.info : paint.accent)(entry.label + ' · ') + paint.muted(safe(entry.text).replace(/\s+/g, ' ').trim()), width,
   ));
-  return [section(`QUEUED ${count}`, detail, width), ...rows];
+  return [section(`QUEUED ${count}`, detail, width), ...rows.map(row => paint.panel(row))];
 }

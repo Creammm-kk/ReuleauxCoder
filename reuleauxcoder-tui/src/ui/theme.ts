@@ -8,6 +8,9 @@ export interface Theme {
   border: string;
   foreground: string;
   background: string;
+  panelBackground: string;
+  additionBackground: string;
+  deletionBackground: string;
   muted: string;
   success: string;
   warning: string;
@@ -18,6 +21,7 @@ export interface Theme {
 
 const terminal: Theme = {
   accent: 'cyan', secondary: 'magenta', info: 'blue', border: 'gray', foreground: 'default', background: 'default',
+  panelBackground: 'default', additionBackground: 'default', deletionBackground: 'default',
   muted: 'default', success: 'green', warning: 'yellow', error: 'red',
   selectionBackground: 'blue', selectionText: 'white',
 };
@@ -28,6 +32,7 @@ export const presets: Record<string, Theme> = {
     ...terminal,
     accent: '#dbac6a', secondary: '#93b8ac', info: '#9fbad6', border: '#46524f', foreground: '#dedcd3', background: '#191d1e',
     muted: '#919b98', success: '#93b8ac', warning: '#e4b976', error: '#e58c7d',
+    panelBackground: '#242c2a', additionBackground: '#24382f', deletionBackground: '#3c2b2a',
     selectionBackground: '#35423e', selectionText: '#f1e5cd',
   },
   ocean: {
@@ -77,6 +82,13 @@ function colorCode(color: string, background = false): string {
 }
 
 const foreground = (role: keyof Theme, text: string) => colorCode(current[role]) + text + '\x1b[39m';
+export type AccentRole = 'accent' | 'secondary' | 'info' | 'success' | 'warning' | 'error';
+// Restore enclosing colors after nested Markdown, selections and cursor styles.
+function surface(text: string, foregroundColor: string, backgroundColor: string): string {
+  const fg = colorCode(foregroundColor), bg = colorCode(backgroundColor, true);
+  return fg + bg + text.replaceAll('\x1b[39m', fg).replaceAll('\x1b[49m', bg).replaceAll('\x1b[0m', '\x1b[0m' + fg + bg) + '\x1b[39m\x1b[49m';
+}
+const badge = (text: string, role: AccentRole = 'accent') => surface(` ${text} `, current.background === 'default' ? 'black' : current.background, current[role]);
 export const paint = {
   dim: (text: string) => `\x1b[2m${text.replaceAll('\x1b[22m', '\x1b[22m\x1b[2m')}\x1b[22m`,
   muted: (text: string) => current.muted === 'default' ? `\x1b[2m${text}\x1b[22m` : foreground('muted', text),
@@ -89,12 +101,12 @@ export const paint = {
   error: (text: string) => foreground('error', text),
   warning: (text: string) => foreground('warning', text),
   selected: (text: string) => colorCode(current.selectionBackground, true) + colorCode(current.selectionText) + text + '\x1b[39m\x1b[49m',
-  action: (text: string) => colorCode(current.success, true) + colorCode(current.background === 'default' ? 'black' : current.background) + ` ${text} ` + '\x1b[39m\x1b[49m',
-  // Restore the theme surface after nested ANSI styles (selection, Markdown, cursor).
-  surface: (text: string) => {
-    const fg = colorCode(current.foreground), bg = colorCode(current.background, true);
-    return fg + bg + text.replaceAll('\x1b[39m', fg).replaceAll('\x1b[49m', bg).replaceAll('\x1b[0m', '\x1b[0m' + fg + bg) + '\x1b[39m\x1b[49m';
-  },
+  badge,
+  action: (text: string) => badge(text, 'success'),
+  panel: (text: string) => surface(text, current.foreground, current.panelBackground),
+  addition: (text: string) => surface(text, current.success, current.additionBackground),
+  deletion: (text: string) => surface(text, current.error, current.deletionBackground),
+  surface: (text: string) => surface(text, current.foreground, current.background),
 };
 
 export function fit(text: string, width: number): string {
@@ -108,15 +120,15 @@ export function between(left: string, right: string, width: number): string {
 }
 
 export function section(label: string, detail: string, width: number, color = paint.accent): string {
-  const heading = sliceAnsi(`─ ${label} `, 0, Math.max(0, width - 2));
+  const heading = label ? sliceAnsi(`─ ${label} `, 0, Math.max(0, width - 2)) : '';
   const available = Math.max(0, width - stringWidth(heading) - 3);
   const caption = sliceAnsi(detail, 0, available);
   const rule = '─'.repeat(Math.max(0, width - stringWidth(heading) - stringWidth(caption) - (caption ? 1 : 0)));
   return color(heading) + paint.border(rule) + (caption ? paint.muted(' ' + caption) : '');
 }
 
-export function frameEdge(label: string, width: number, bottom = false, color = paint.accent): string {
-  return paint.border(bottom ? '╰' : '╭') + section(label, '', width - 2, color) + paint.border(bottom ? '╯' : '╮');
+export function frameEdge(label: string, width: number, bottom = false, color = paint.accent, detail = ''): string {
+  return paint.border(bottom ? '└' : '┌') + section(label, detail, width - 2, color) + paint.border(bottom ? '┘' : '┐');
 }
 
 export function frameRow(text: string, width: number): string {

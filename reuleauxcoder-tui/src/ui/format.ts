@@ -2,7 +2,7 @@ import {marked, type Token} from 'marked';
 import wrapAnsi from 'wrap-ansi';
 import {typeOf} from '../protocol/wire.js';
 import {humanize} from '../state/menus.js';
-import {paint} from './theme.js';
+import {frameEdge, frameRow, paint} from './theme.js';
 /** Treat backend/user escape sequences as data. Styling is produced only here. */
 export const safe = (text: string) => text.replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, '').replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '').replace(/[\x00-\x08\x0b-\x1f\x7f-\x9f]/g, '');
 
@@ -20,13 +20,13 @@ function inline(text: string): string {
   }).join('');
 }
 
-export function markdown(text: string): string {
+export function markdown(text: string, width = 80): string {
   function render(tokens: Token[]): string {
     return tokens.map((token: any) => {
       switch (token.type) {
         case 'heading': return paint.secondary(paint.bold(inline(token.text))) + '\n';
         case 'paragraph': return inline(token.text) + '\n';
-        case 'code': return paint.info(token.lang || 'code') + '\n' + safe(token.text).split('\n').map((line: string) => paint.border('  │ ') + line).join('\n') + '\n';
+        case 'code': return [frameEdge(token.lang || 'code', width, false, paint.info), ...wrap(safe(token.text), width - 4).map(line => frameRow(line, width)), frameEdge('', width, true)].join('\n') + '\n';
         case 'blockquote': return render(token.tokens).split('\n').map(line => '│ ' + line).join('\n');
         case 'list': return token.items.map((item: any, index: number) => `${token.ordered ? `${index + (token.start || 1)}.` : '•'} ${item.task ? (item.checked ? '[✓] ' : '[ ] ') : ''}${render(item.tokens).trimEnd()}`).join('\n') + '\n';
         case 'table': return [token.header.map((cell: any) => paint.bold(inline(cell.text))).join(' │ '), ...token.rows.map((row: any[]) => row.map(cell => inline(cell.text)).join(' │ '))].join('\n') + '\n';
@@ -40,7 +40,7 @@ export function markdown(text: string): string {
 }
 
 export function diff(text: string): string {
-  return safe(text).split('\n').map(line => line.startsWith('+') ? paint.success(line) : line.startsWith('-') ? paint.error(line) : line.startsWith('@@') ? paint.accent(line) : line).join('\n');
+  return safe(text).split('\n').map(line => line.startsWith('+') ? paint.addition(line) : line.startsWith('-') ? paint.deletion(line) : line.startsWith('@@') ? paint.accent(line) : line).join('\n');
 }
 
 /** All public view fields remain reachable, including fields added by the backend. */

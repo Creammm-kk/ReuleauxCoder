@@ -9,7 +9,7 @@ import {TuiController} from '../src/state/controller.js';
 import {editor, edit} from '../src/state/editor.js';
 import {App} from '../src/ui/App.js';
 import {inputRows, TranscriptLayout} from '../src/ui/viewport.js';
-import {safe} from '../src/ui/format.js';
+import {markdown, safe} from '../src/ui/format.js';
 import {panelRows} from '../src/ui/panels.js';
 import {sidebarRows} from '../src/ui/sidebar.js';
 import {paint} from '../src/ui/theme.js';
@@ -155,15 +155,20 @@ test('workbench sidebar adapts to terminal size and preserves drafts and full se
   assert(app.lastFrame()?.includes('Task 6'), 'the current plan step remains visible');
   assert(app.lastFrame()?.includes('Test worker'));
   assert(app.lastFrame()?.includes('24%'));
-  assert(app.lastFrame()?.includes('╭'));
-  for (const [rows, columns] of [[24, 119], [24, 120], [12, 40], [32, 160]]) {
+  assert(app.lastFrame()?.includes('┌'));
+  for (const [rows, columns] of [[45, 140], [34, 80], [33, 80], [24, 119], [24, 120], [20, 120], [12, 40], [32, 160]]) {
+    const previous = app.lastFrame();
     c.resize(rows, columns);
-    await until(() => Boolean(app.lastFrame()?.includes('WORKBENCH')) === (columns >= 120 && rows >= 20));
+    await until(() => app.lastFrame() !== previous && app.lastFrame()?.split('\n').length === rows - 1);
     const frame = app.lastFrame()!;
+    assert.equal(frame.includes('WORKBENCH'), columns >= 120 && rows >= 20);
     assert(frame.split('\n').length <= rows - 1);
     assert(frame.split('\n').every(row => stringWidth(row) <= columns));
     assert(frame.includes('中文草稿'));
     assert(frame.includes('Keep this draft'));
+    const inputTop = safe(frame).split('\n').findIndex(row => row.includes('┌─ YOU'));
+    assert(inputTop >= 0);
+    assert.equal(stringWidth(safe(frame).split('\n')[inputTop].trim()), columns - 2, 'the input spans both columns');
   }
   c.showSession();
   assert(c.screen?.kind === 'document');
@@ -173,6 +178,28 @@ test('workbench sidebar adapts to terminal size and preserves drafts and full se
     assert(c.screen.body.includes('Running focused tests'));
   }
   assert.equal(c.composer.text, '中文草稿\nKeep this draft');
+});
+
+test('message numbering survives folding and code frames preserve wrapped Unicode content', () => {
+  const c = new TuiController(new RuntimeClient(new RpcPeer(new PassThrough(), new PassThrough())));
+  c.session.add('user', 'You', 'Review this');
+  c.session.add('reasoning', 'Thinking', 'Retained reasoning');
+  c.session.add('assistant', 'Reuleaux', 'Done');
+  const layout = new TranscriptLayout();
+  for (const expanded of [false, true, false]) {
+    const text = safe(layout.render(c.session.cells, 40, 100, 0, expanded).rows.join('\n'));
+    assert(text.includes('01 / YOU'));
+    assert(text.includes('02 / REULEAUX'));
+  }
+  c.session.cells.shift();
+  assert(safe(layout.render(c.session.cells, 40, 100, 0, false).rows.join('\n')).includes('01 / REULEAUX'), 'cached headings track the visible conversation');
+  const code = 'const 内容 =\n"' + '中文👩🏽‍💻'.repeat(12) + '";';
+  for (const width of [18, 38, 100]) {
+    const rows = safe(markdown('```ts\n' + code + '\n```', width)).split('\n');
+    assert(rows.every(row => stringWidth(row) === width));
+    assert.equal(rows.slice(1, -1).map(row => row.slice(2, -2).trimEnd()).join(''), code.replaceAll('\n', ''));
+  }
+  c.client.peer.close(); c.dispose();
 });
 
 test('sidebar prioritizes attention and Git summaries before optional file and plan details', () => {
