@@ -35,6 +35,13 @@ export interface RuntimeState {
   context_tokens: number; context_limit: number; mcp_enabled: number; mcp_tools: number;
   mcp_state: string; workspace: string; exit_saved_session_id: string | null;
   approval_waiting: number;
+  mode?: string | null; approval_policy?: string;
+}
+export interface GitFile {path: string; index: string; worktree: string; conflict: boolean}
+export interface GitWorkspace {
+  available: boolean; branch: string; head: string; upstream: string | null;
+  ahead: number | null; behind: number | null; files: GitFile[];
+  additions: number | null; deletions: number | null; truncated: boolean; reason: string | null;
 }
 export interface PanelItem {label: string; description: string; current: boolean; action: {action_id: string; command: {[key: string]: Json}} | null}
 export interface Panel {view_type: string; title: string; items: PanelItem[]; children: [string, Panel][]; filterable: boolean; keep_open_on_submit: boolean; return_to_parent_on_submit: boolean}

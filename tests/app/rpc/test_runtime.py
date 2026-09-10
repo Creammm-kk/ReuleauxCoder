@@ -10,6 +10,25 @@ from reuleauxcoder.extensions.command.builtin.thinking import SetEffortCommand
 from reuleauxcoder.infrastructure.rpc.peer import RpcError
 
 
+def test_workspace_git_and_effective_modes_cross_rpc(runtime, tmp_path):
+    import subprocess
+
+    from reuleauxcoder.infrastructure.version_control import GitMonitor
+
+    assert decode(runtime.client.peer.request("runtime.git")) is None
+    runtime.agent.git_monitor = GitMonitor(tmp_path)
+    snapshot = decode(runtime.client.peer.request("runtime.git"))
+    assert not snapshot.available
+    subprocess.run(["git", "init", str(tmp_path)], check=True, capture_output=True)
+    (tmp_path / "backend-workspace.txt").write_text("from the backend\n")
+    snapshot = decode(runtime.client.peer.request("runtime.git"))
+    assert snapshot.available
+    assert any(file.path == "backend-workspace.txt" for file in snapshot.files)
+    runtime.client.refresh()
+    assert runtime.client.state.mode == runtime.agent.active_mode
+    assert runtime.client.state.approval_policy == runtime.config.approval.default_mode
+
+
 def test_chat_and_all_builtin_views_use_serialized_events(runtime, caplog):
     runtime.client.submit("hello")
     runtime.client.wait_idle()

@@ -21,7 +21,7 @@ from reuleauxcoder.app.commands import (
     view_models,
 )
 from reuleauxcoder.app.rpc import models
-from reuleauxcoder.domain import approval, plan
+from reuleauxcoder.domain import approval, plan, version_control
 from reuleauxcoder.domain.agent import tool_outcome
 from reuleauxcoder.domain.runtime import events
 from reuleauxcoder.extensions.mcp import models as mcp_models
@@ -37,6 +37,7 @@ _MODULES = (
     requests,
     view_models,
     models,
+    version_control,
     events,
     plan,
     mcp_models,

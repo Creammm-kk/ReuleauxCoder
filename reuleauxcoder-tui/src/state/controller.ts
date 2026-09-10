@@ -87,10 +87,17 @@ export class TuiController extends EventEmitter {
 
   startRefresh() {
     let refreshing = false;
+    let gitRefreshing = false, nextGitRefresh = 0;
     this.refreshTimer = setInterval(() => {
       if (refreshing || !this.session.connected || this.closing) return;
       refreshing = true;
       void this.client.refresh().catch(error => {this.session.connected = false; this.session.fatal = error.message; this.fail(error);}).finally(() => {refreshing = false;});
+      if (this.client.info.workspace_git && !gitRefreshing && performance.now() >= nextGitRefresh) {
+        gitRefreshing = true;
+        nextGitRefresh = performance.now() + 5000;
+        void this.client.git().then(git => {this.session.git = git; this.changed();})
+          .catch(this.fail).finally(() => {gitRefreshing = false;});
+      }
     }, 500);
     this.refreshTimer.unref();
   }
@@ -308,7 +315,7 @@ export class TuiController extends EventEmitter {
   }
   showSession() {
     if (this.screen?.title === 'Session details') {this.screens.pop(); this.changed(); return;}
-    this.document('Session details', fields({session: this.session.state, plan: this.session.plan, progress: this.session.progress, agents: [...this.session.jobs.values()], processes: [...this.session.processes.values()], diagnostics: [...this.session.diagnostics.values()], operations: [...this.session.operations.values()], startup: this.session.startup}));
+    this.document('Session details', fields({session: this.session.state, git: this.session.git, plan: this.session.plan, progress: this.session.progress, agents: [...this.session.jobs.values()], processes: [...this.session.processes.values()], diagnostics: [...this.session.diagnostics.values()], operations: [...this.session.operations.values()], startup: this.session.startup}));
   }
   showHelp() {this.document('Keyboard help', 'Enter        Send / select\nShift+Enter  New line (Alt+Enter also works)\n/ or Ctrl+P  Open command menus\nEsc          Back / cancel interaction\nCtrl+C       Cancel interaction → close menu → clear draft → interrupt → confirm exit\nCtrl+D       Exit with an empty draft\nUp / Down    Scroll when input is empty; otherwise input history\nAlt+Up/Down  Input history, including with an empty draft\nPgUp / PgDn  Scroll the focused content\nHome / End   Transcript start / follow tail (empty composer)\nF1 / Ctrl+G  Keyboard help\nF2 / Ctrl+O  Session, plan, jobs and startup details\nF4 / Ctrl+R  Toggle full transcript details (all records)\nCtrl+A/E     Start / end of input\nCtrl+U/K/W   Delete before / after / previous word\n\nF4 shows:\n  Tool arguments and full received output, diffs, diagnostics and archive details.\n  Reasoning returned by the model.\nIt applies to all retained records in this conversation.\nPress F4 again to restore previews; PgUp/PgDn reads earlier content.\n\nApproval: 1/y/Enter approve once · 2/n deny · s session scope · f feedback\nSecret input is masked and never written to input history.');}
   async finish() {

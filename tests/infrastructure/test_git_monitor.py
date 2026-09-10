@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import os
 import subprocess
 
 import pytest
@@ -38,6 +39,81 @@ def _repository(tmp_path: Path) -> Path:
     _git(root, "add", "tracked.txt")
     _git(root, "commit", "-m", "initial commit")
     return root
+
+
+def test_workspace_snapshot_tracks_index_worktree_and_local_upstream(tmp_path):
+    root = _repository(tmp_path)
+    _git(root, "branch", "upstream")
+    _git(root, "branch", "--set-upstream-to=upstream", "main")
+    monitor = GitMonitor(root)
+    monitor.snapshot(turn_id="before")
+    (root / "second.txt").write_text("second\n")
+    _git(root, "add", "second.txt")
+    _git(root, "commit", "-m", "second")
+    (root / "tracked.txt").write_text("staged\n")
+    _git(root, "add", "tracked.txt")
+    (root / "tracked.txt").write_text("staged\nworktree\n")
+    (root / "空 格.txt").write_text("untracked\n", encoding="utf-8")
+
+    snapshot = monitor.workspace_snapshot()
+    assert snapshot.available and snapshot.branch == "main"
+    assert snapshot.upstream == "upstream"
+    assert (snapshot.ahead, snapshot.behind) == (1, 0)
+    assert (snapshot.additions, snapshot.deletions) == (2, 1)
+    assert {file.path: (file.index, file.worktree) for file in snapshot.files} == {
+        "tracked.txt": ("M", "M"),
+        "空 格.txt": ("?", "?"),
+    }
+    # UI reads must not consume the model overlay's next-turn commit notice.
+    assert monitor.snapshot(turn_id="after")["head_change"]["kind"] == "new_commits"
+    _git(root, "reset", "--hard", "HEAD")
+    _git(root, "checkout", "--detach", "upstream")
+    detached = monitor.workspace_snapshot()
+    assert detached.branch == "(detached)"
+    assert detached.upstream is None and detached.ahead is None
+
+
+def test_workspace_snapshot_reports_conflicts_and_unborn_repositories(tmp_path):
+    root = _repository(tmp_path)
+    _git(root, "checkout", "-b", "other")
+    (root / "tracked.txt").write_text("other\n")
+    _git(root, "commit", "-am", "other")
+    _git(root, "checkout", "main")
+    (root / "tracked.txt").write_text("main\n")
+    _git(root, "commit", "-am", "main")
+    with pytest.raises(subprocess.CalledProcessError):
+        _git(root, "merge", "other")
+    snapshot = GitMonitor(root).workspace_snapshot()
+    assert [(file.path, file.conflict) for file in snapshot.files] == [
+        ("tracked.txt", True)
+    ]
+
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    assert not GitMonitor(empty).workspace_snapshot().available
+    _git(empty, "init")
+    (empty / "new.txt").write_text("new\n")
+    unborn = GitMonitor(empty).workspace_snapshot()
+    assert unborn.available and unborn.head == "(initial)"
+    assert unborn.files[0].index == "?"
+    assert unborn.additions is None
+
+
+def test_workspace_snapshot_marks_partial_status_and_keeps_nul_delimited_paths(
+    tmp_path,
+):
+    root = _repository(tmp_path)
+    for index in range(30):
+        (root / f"long-untracked-name-{index}.txt").write_text("new\n")
+    snapshot = GitMonitor(root, max_output_bytes=256).workspace_snapshot()
+    assert snapshot.available and snapshot.truncated
+    assert all(file.path.endswith(".txt") for file in snapshot.files)
+    if os.name != "nt":
+        name = "tab\tline\nfile.txt"
+        (root / name).write_text("special\n")
+        assert name in {
+            file.path for file in GitMonitor(root).workspace_snapshot().files
+        }
 
 
 def test_snapshot_separates_git_change_categories_and_collapses_directories(

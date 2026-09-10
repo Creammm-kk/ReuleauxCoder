@@ -114,6 +114,7 @@ class RuntimeServer:
                 "runtime.record_performance": self.record_performance,
                 "runtime.shutdown": self.shutdown,
                 "runtime.snapshot": lambda: encode(self.snapshot()),
+                "runtime.git": self.git_snapshot,
                 "view.panel": lambda payload: encode(
                     commands.build_panel(decode(payload))
                 ),
@@ -161,7 +162,13 @@ class RuntimeServer:
                 workspace=str(agent.runtime_working_directory or Path.cwd()),
                 exit_saved_session_id=self.commands.exit_saved_session_id,
                 approval_waiting=review.queue_status.waiting if review else 0,
+                mode=agent.active_mode,
+                approval_policy=self.config.approval.default_mode,
             )
+
+    def git_snapshot(self):
+        monitor = self.agent.git_monitor
+        return encode(monitor.workspace_snapshot() if monitor else None)
 
     def _publish_state(self):
         state = self.snapshot()
@@ -188,6 +195,7 @@ class RuntimeServer:
             result = encode(
                 {
                     "version": 1,
+                    "workspace_git": self.agent.git_monitor is not None,
                     "catalog": self.commands.catalog,
                     "state": self.snapshot(),
                     "history_file": self.config.history_file,

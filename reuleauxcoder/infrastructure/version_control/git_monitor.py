@@ -12,6 +12,9 @@ import threading
 import time
 from typing import Any
 
+from reuleauxcoder.domain.version_control import GitWorkspace
+from reuleauxcoder.infrastructure.version_control.workspace import read_workspace
+
 
 _CHANGE_NAMES = {
     "A": "added",
@@ -178,6 +181,10 @@ class GitMonitor:
             self._snapshot_cache_at = None
             self._snapshot_cache_turn_id = None
             self._snapshot_cache = None
+
+    def workspace_snapshot(self) -> GitWorkspace:
+        """Sample UI facts without consuming the execution overlay's HEAD notices."""
+        return read_workspace(self._git)
 
     def _git(
         self,

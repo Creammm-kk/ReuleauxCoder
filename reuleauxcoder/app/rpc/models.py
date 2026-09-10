@@ -23,6 +23,8 @@ class RuntimeSnapshot:
     workspace: str = ""
     exit_saved_session_id: str | None = None
     approval_waiting: int = 0
+    mode: str | None = None
+    approval_policy: str = ""
 
 
 @dataclass(frozen=True, slots=True)

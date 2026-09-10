@@ -1,4 +1,5 @@
 import {EventEmitter} from 'node:events';
+import type {GitWorkspace} from '../protocol/wire.js';
 import {emptyState, typeOf, type Json, type RecordData, type RuntimeState, type UIEvent, type View} from '../protocol/wire.js';
 import {diff, fields} from '../ui/format.js';
 
@@ -15,6 +16,7 @@ export class SessionStore extends EventEmitter {
   startup: UIEvent[] = [];
   fatal: string | null = null;
   connected = false;
+  git: GitWorkspace | null = null;
   private next = 0;
   private generation = 0;
   private assistant: Cell | undefined;
