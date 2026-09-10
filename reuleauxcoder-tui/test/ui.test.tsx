@@ -102,6 +102,29 @@ test('stopped work returns to Ready and Ctrl+C resumes idle exit confirmation', 
   assert(!c.closing);
 });
 
+test('scrolling to the bottom restores shortcuts and follows subsequent output', async t => {
+  const c = new TuiController(new RuntimeClient(new RpcPeer(new PassThrough(), new PassThrough())));
+  t.after(() => {c.client.peer.close(); c.dispose();});
+  c.session.connected = true;
+  c.session.add('assistant', 'Reuleaux', Array.from({length: 60}, (_, index) => `line ${index}`).join('\n'));
+  const app = render(<App controller={c}/>); t.after(() => app.cleanup());
+  await until(() => app.lastFrame()?.includes('line 59'));
+  for (const key of [{pageDown: true}, {downArrow: true}]) {
+    await c.key('', {upArrow: true});
+    await until(() => app.lastFrame()?.includes('History '));
+    await c.key('', key);
+    await until(() => c.offset === null && !app.lastFrame()?.includes('History '));
+    assert(app.lastFrame()?.includes('F4'));
+  }
+  c.session.add('assistant', 'Reuleaux', 'Latest response');
+  c.changed();
+  await until(() => app.lastFrame()?.includes('Latest response'));
+  await c.key('', {upArrow: true});
+  await until(() => app.lastFrame()?.includes('History '));
+  c.resize(100, 80);
+  await until(() => c.offset === null && !app.lastFrame()?.includes('History '));
+});
+
 test('Unicode editing and viewport folding retain complete output without terminal escapes', () => {
   let value = editor('中文👩🏽‍💻é');
   value = edit(value, '', {backspace: true});

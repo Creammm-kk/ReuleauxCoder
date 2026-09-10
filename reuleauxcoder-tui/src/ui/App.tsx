@@ -48,7 +48,7 @@ export function App({controller: c, alternateScreen = false}: {controller: TuiCo
   const transcriptHeight = Math.max(0, available - (panel ? panelHeight + 2 : 0));
   const transcript = layout.render(c.session.cells, width, transcriptHeight, c.offset, c.expanded);
   c.viewportRows = Math.max(1, panel ? panelHeight : transcriptHeight); c.totalRows = transcript.total;
-  if (c.offset !== null) c.offset = transcript.start;
+  if (c.offset !== null) c.offset = transcriptHeight > 0 && transcript.start + transcriptHeight >= transcript.total ? null : transcript.start;
   const state = c.session.state;
   const phase = c.session.fatal ? 'Disconnected' : liveActivity?.label ?? 'Ready';
   const context = state.context_limit ? `${Math.round(state.context_tokens / state.context_limit * 100)}% context` : `${state.context_tokens} tokens`;
