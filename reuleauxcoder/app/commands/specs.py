@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Callable
+from typing import Callable, Literal
 
 from reuleauxcoder.app.commands.models import CommandContext, CommandEffect
 from reuleauxcoder.app.commands.capabilities import UICapability, UIProfile
@@ -62,8 +62,8 @@ ActionHandler = Callable[[object, CommandContext], CommandEffect]
 
 
 @dataclass(frozen=True, slots=True)
-class ActionSpec:
-    """Declarative action definition."""
+class ActionDescription:
+    """Read-only frontend description, containing no parsers or handlers."""
 
     action_id: str
     feature_id: str
@@ -71,8 +71,6 @@ class ActionSpec:
     ui_targets: frozenset[str]
     required_capabilities: frozenset[UICapability] = field(default_factory=frozenset)
     triggers: tuple[TriggerSpec, ...] = ()
-    parser: ActionParser | None = None
-    handler: ActionHandler | None = None
     interactive: bool = False
     during_turn: DuringTurnPolicy = DuringTurnPolicy.DEFER_UNTIL_IDLE
 
@@ -93,3 +91,21 @@ class ActionSpec:
             if trigger.is_available_in(ui_profile, fallback_ui_targets=self.ui_targets):
                 matched.append(trigger)
         return tuple(matched)
+
+
+@dataclass(frozen=True, slots=True)
+class ActionSpec(ActionDescription):
+    parser: ActionParser | None = None
+    handler: ActionHandler | None = None
+    command_type: type = object
+    audit: Literal["runtime_config_changed", "session_lifecycle"] | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ActionCatalog:
+    actions: tuple[ActionDescription, ...]
+
+    def iter_actions(self, ui_profile: UIProfile) -> tuple[ActionDescription, ...]:
+        return tuple(
+            action for action in self.actions if action.is_available_in(ui_profile)
+        )

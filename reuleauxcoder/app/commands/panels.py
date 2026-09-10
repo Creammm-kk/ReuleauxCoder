@@ -48,6 +48,12 @@ PanelBuilder = Callable[[object, str], PanelDefinition | None]
 
 
 @dataclass(frozen=True, slots=True)
+class PanelPresentation:
+    definition: PanelDefinition
+    refresh: PanelRefreshPolicy
+
+
+@dataclass(frozen=True, slots=True)
 class CommandPanelSpec:
     """One command feature's typed interactive panel contribution."""
 

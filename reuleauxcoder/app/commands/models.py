@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from collections.abc import Mapping
+from collections.abc import Mapping, Callable
 from typing import TYPE_CHECKING, Literal
 
 from reuleauxcoder.app.interaction_contracts import UIInteractor
@@ -63,6 +63,7 @@ class CommandEffect:
     notifications: list[NotificationEffect] = field(default_factory=list)
     views: list[OpenViewRequest] = field(default_factory=list)
     state_changes: list[StateChangeEffect] = field(default_factory=list)
+    clear_transcript: bool = False
 
     @property
     def state(self) -> dict[str, object]:
@@ -182,3 +183,4 @@ class CommandContext:
     ui_interactor: UIInteractor | None = None
     sessions_dir: Path | None = None
     skills_service: SkillsService | None = None
+    exit_session: Callable[[], str | None] | None = None
