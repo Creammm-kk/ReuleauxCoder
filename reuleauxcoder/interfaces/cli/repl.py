@@ -22,8 +22,8 @@ from reuleauxcoder.interfaces.cli.prompt import (
     FORGE_USER_PROMPT_STYLE,
     forge_active_prompt,
 )
-from reuleauxcoder.interfaces.events import UIEvent, UIEventBus, UIEventKind
-from reuleauxcoder.interfaces.ui_registry import UIProfile
+from reuleauxcoder.app.ui_events import UIEvent, UIEventBus, UIEventKind
+from reuleauxcoder.app.commands.capabilities import UIProfile
 
 
 def run_repl(

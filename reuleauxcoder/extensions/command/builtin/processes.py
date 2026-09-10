@@ -24,9 +24,9 @@ from reuleauxcoder.domain.process import (
     ProcessState,
 )
 from reuleauxcoder.domain.process_manager import ManagedProcessView, ProcessManager
-from reuleauxcoder.interfaces.events import UIEventKind
-from reuleauxcoder.interfaces.interactions import InputTextRequest
-from reuleauxcoder.interfaces.ui_registry import UICapability
+from reuleauxcoder.app.ui_events import UIEventKind
+from reuleauxcoder.app.interaction_contracts import InputTextRequest
+from reuleauxcoder.app.commands.capabilities import UICapability
 
 
 _MAX_UI_OUTPUT_CHARS = 8_000

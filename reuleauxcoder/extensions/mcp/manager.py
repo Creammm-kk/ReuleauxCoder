@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Iterable
 
 if TYPE_CHECKING:
     from reuleauxcoder.domain.config.models import MCPServerConfig
-    from reuleauxcoder.interfaces.events import UIEventBus
+    from reuleauxcoder.app.ui_events import UIEventBus
 
 from reuleauxcoder.extensions.mcp.adapter import MCPTool
 from reuleauxcoder.extensions.mcp.client import MCPClient
@@ -263,7 +263,7 @@ class MCPManager:
     def _emit(self, level: str, message: str) -> None:
         if self._ui_bus is None:
             return
-        from reuleauxcoder.interfaces.events import UIEventKind
+        from reuleauxcoder.app.ui_events import UIEventKind
 
         emit = getattr(self._ui_bus, level, None)
         if callable(emit):

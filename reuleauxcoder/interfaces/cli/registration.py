@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from reuleauxcoder.interfaces.cli.interactor import CLIUIInteractor
 from reuleauxcoder.interfaces.cli.views.registry import create_cli_view_registry
-from reuleauxcoder.interfaces.events import UIEventBus
-from reuleauxcoder.interfaces.ui_registry import UICapability, UIProfile, UIRegistration
+from reuleauxcoder.app.ui_events import UIEventBus
+from reuleauxcoder.app.commands.capabilities import UICapability, UIProfile
+from reuleauxcoder.interfaces.ui_registry import UIRegistration
 from reuleauxcoder.app.runtime.interactions import InteractionCoordinator
 
 

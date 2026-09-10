@@ -14,7 +14,7 @@ from reuleauxcoder.app.commands.view_models import (
     ThinkingEffortViewModel,
     TokenUsageViewModel,
 )
-from reuleauxcoder.interfaces.events import ViewEventPayload
+from reuleauxcoder.app.ui_events import ViewEventPayload
 from reuleauxcoder.interfaces.tui.formatting import clip
 
 

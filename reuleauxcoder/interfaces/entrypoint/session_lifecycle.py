@@ -14,7 +14,7 @@ from reuleauxcoder.app.runtime.session_state import (
 )
 from reuleauxcoder.domain.agent.agent import Agent
 from reuleauxcoder.domain.config.models import Config
-from reuleauxcoder.interfaces.events import UIEventBus, UIEventKind
+from reuleauxcoder.app.ui_events import UIEventBus, UIEventKind
 from reuleauxcoder.interfaces.entrypoint.dependencies import AppDependencies, AppOptions
 from reuleauxcoder.infrastructure.persistence.session_store import SessionRestoreError
 

@@ -13,7 +13,7 @@ from reuleauxcoder.interfaces.cli.commands import (
 )
 from reuleauxcoder.app.commands.registry import ActionRegistry
 from reuleauxcoder.app.commands.specs import ActionSpec, TriggerKind, TriggerSpec
-from reuleauxcoder.interfaces.ui_registry import UICapability, UIProfile
+from reuleauxcoder.app.commands.capabilities import UICapability, UIProfile
 
 
 # ---------------------------------------------------------------------------

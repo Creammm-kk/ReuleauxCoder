@@ -29,7 +29,7 @@ from reuleauxcoder.interfaces.cli.registration import (
     CLI_PROFILE,
     REMOTE_CLI_PROFILE,
 )
-from reuleauxcoder.interfaces.interactions import InputTextResponse
+from reuleauxcoder.app.interaction_contracts import InputTextResponse
 
 
 def _python_command(source: str) -> str:

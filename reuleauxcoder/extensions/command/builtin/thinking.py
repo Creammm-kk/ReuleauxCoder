@@ -26,7 +26,7 @@ from reuleauxcoder.app.commands.view_models import (
     ThinkingEffortViewModel,
 )
 from reuleauxcoder.domain.config.models import DEFAULT_REASONING_EFFORT_VALUES
-from reuleauxcoder.interfaces.events import UIEventKind
+from reuleauxcoder.app.ui_events import UIEventKind
 
 _VALID_EFFORTS = frozenset({"low", "medium", "high"})
 

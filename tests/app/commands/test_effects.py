@@ -9,7 +9,7 @@ from reuleauxcoder.app.commands.view_models import HelpViewModel
 from reuleauxcoder.app.commands.registry import ActionRegistry
 from reuleauxcoder.app.commands.specs import ActionSpec
 from reuleauxcoder.interfaces.cli.commands import _apply_command_effect
-from reuleauxcoder.interfaces.events import UIEventBus
+from reuleauxcoder.app.ui_events import UIEventBus
 
 
 def _action(handler) -> ActionSpec:

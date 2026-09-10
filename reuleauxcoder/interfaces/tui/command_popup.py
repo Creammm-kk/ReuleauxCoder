@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 from reuleauxcoder.app.commands.registry import ActionRegistry
 from reuleauxcoder.app.commands.specs import TriggerKind
-from reuleauxcoder.interfaces.ui_registry import UIProfile
+from reuleauxcoder.app.commands.capabilities import UIProfile
 
 
 @dataclass(frozen=True, slots=True)

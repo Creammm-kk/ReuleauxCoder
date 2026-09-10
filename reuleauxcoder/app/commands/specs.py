@@ -7,7 +7,7 @@ from enum import Enum
 from typing import Callable
 
 from reuleauxcoder.app.commands.models import CommandContext, CommandEffect
-from reuleauxcoder.interfaces.ui_registry import UICapability, UIProfile
+from reuleauxcoder.app.commands.capabilities import UICapability, UIProfile
 
 
 class TriggerKind(str, Enum):

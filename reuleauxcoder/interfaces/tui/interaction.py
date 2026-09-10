@@ -7,8 +7,8 @@ import threading
 import time
 from typing import Any, Literal
 
-from reuleauxcoder.interfaces.events import UIEvent, UIEventDeliveryAck
-from reuleauxcoder.interfaces.interactions import (
+from reuleauxcoder.app.ui_events import UIEvent, UIEventDeliveryAck
+from reuleauxcoder.app.interaction_contracts import (
     ChooseOneRequest,
     ChooseOneResponse,
     ConfirmRequest,

@@ -30,7 +30,7 @@ from reuleauxcoder.extensions.lsp.diagnostic_outcomes import (
     safe_observer_error_type,
 )
 from reuleauxcoder.extensions.lsp.diagnostics import render_blocks
-from reuleauxcoder.interfaces.events import UIEventKind
+from reuleauxcoder.app.ui_events import UIEventKind
 
 logger = logging.getLogger(__name__)
 

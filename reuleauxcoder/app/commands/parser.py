@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from reuleauxcoder.app.commands.registry import ActionRegistry, ParsedAction
-from reuleauxcoder.interfaces.ui_registry import UIProfile
+from reuleauxcoder.app.commands.capabilities import UIProfile
 
 
 def parse_command(

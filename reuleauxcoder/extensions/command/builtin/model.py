@@ -33,7 +33,7 @@ from reuleauxcoder.domain.session.models import SessionRuntimeState
 from reuleauxcoder.infrastructure.persistence.workspace_config_store import (
     WorkspaceConfigStore,
 )
-from reuleauxcoder.interfaces.events import UIEventKind
+from reuleauxcoder.app.ui_events import UIEventKind
 
 
 @dataclass(frozen=True, slots=True)

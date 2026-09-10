@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 from reuleauxcoder.app.commands.params import EnumParam, StrParam
 from reuleauxcoder.app.commands.specs import TriggerKind, TriggerSpec
-from reuleauxcoder.interfaces.ui_registry import UICapability
+from reuleauxcoder.app.commands.capabilities import UICapability
 
 UI_TARGETS = frozenset({"cli", "tui", "vscode"})
 TEXT_REQUIRED = frozenset({UICapability.TEXT_INPUT})

@@ -1,7 +1,7 @@
 """Actual-first rewrite planner tests."""
 
 from reuleauxcoder.domain.context.manager import ContextManager
-from reuleauxcoder.interfaces.events import UIEventBus
+from reuleauxcoder.app.ui_events import UIEventBus
 
 
 def _messages_with_old_tool_output() -> list[dict]:

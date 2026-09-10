@@ -7,9 +7,9 @@ from pathlib import Path
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Literal
 
-from reuleauxcoder.interfaces.interactions import UIInteractor
-from reuleauxcoder.interfaces.events import ReasoningNoticePayload, UIEventPayload
-from reuleauxcoder.interfaces.ui_registry import UIProfile
+from reuleauxcoder.app.interaction_contracts import UIInteractor
+from reuleauxcoder.app.ui_events import ReasoningNoticePayload, UIEventPayload
+from reuleauxcoder.app.commands.capabilities import UIProfile
 from reuleauxcoder.app.commands.view_models import ViewModel
 
 if TYPE_CHECKING:

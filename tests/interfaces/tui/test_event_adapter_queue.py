@@ -13,7 +13,7 @@ from reuleauxcoder.domain.runtime.events import (
 )
 from reuleauxcoder.domain.runtime.performance import RuntimePerformanceMonitor
 from reuleauxcoder.app.commands.view_models import HelpViewModel
-from reuleauxcoder.interfaces.events import (
+from reuleauxcoder.app.ui_events import (
     RuntimeEventPayload,
     UIEvent,
     UIEventKind,

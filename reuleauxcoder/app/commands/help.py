@@ -11,7 +11,7 @@ from reuleauxcoder.app.commands.view_models import (
     HelpSectionViewModel,
     HelpViewModel,
 )
-from reuleauxcoder.interfaces.ui_registry import UIProfile
+from reuleauxcoder.app.commands.capabilities import UIProfile
 
 
 def build_help_view(

@@ -10,7 +10,7 @@ from rich.panel import Panel
 from rich.text import Text
 
 from reuleauxcoder.interfaces.cli.theme import CLITheme, DEFAULT_CLI_THEME
-from reuleauxcoder.interfaces.events import UIEvent, UIEventLevel
+from reuleauxcoder.app.ui_events import UIEvent, UIEventLevel
 from reuleauxcoder.presentation.semantics import DisplayTone
 
 

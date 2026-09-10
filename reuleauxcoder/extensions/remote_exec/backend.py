@@ -62,7 +62,7 @@ from reuleauxcoder.extensions.remote_exec.protocol import (
 )
 from reuleauxcoder.extensions.remote_exec.server import RelayServer
 from reuleauxcoder.extensions.tools.backend import ExecutionContext, ToolBackend
-from reuleauxcoder.interfaces.events import UIEventBus
+from reuleauxcoder.app.ui_events import UIEventBus
 
 
 _REMOTE_PROCESS_START_ACK_SECONDS = 2

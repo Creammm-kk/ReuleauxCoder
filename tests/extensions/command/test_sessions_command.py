@@ -22,8 +22,8 @@ from reuleauxcoder.extensions.command.builtin.sessions import (
 )
 from reuleauxcoder.infrastructure.persistence.session_store import SessionStore
 from reuleauxcoder.interfaces.cli.commands import handle_command
-from reuleauxcoder.interfaces.events import UIEventBus, UIEventKind
-from reuleauxcoder.interfaces.ui_registry import UICapability, UIProfile
+from reuleauxcoder.app.ui_events import UIEventBus, UIEventKind
+from reuleauxcoder.app.commands.capabilities import UICapability, UIProfile
 
 
 class FakeLLM:

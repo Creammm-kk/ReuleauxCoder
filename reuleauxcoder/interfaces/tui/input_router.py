@@ -5,7 +5,7 @@ from __future__ import annotations
 from prompt_toolkit.filters import Condition
 from prompt_toolkit.key_binding import KeyBindings
 
-from reuleauxcoder.interfaces.interactions import ConfirmRequest, ReviewRequest
+from reuleauxcoder.app.interaction_contracts import ConfirmRequest, ReviewRequest
 
 
 def build_key_bindings(host) -> KeyBindings:

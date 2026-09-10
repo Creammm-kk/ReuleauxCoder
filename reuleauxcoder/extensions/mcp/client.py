@@ -13,7 +13,7 @@ from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, cast
 
 if TYPE_CHECKING:
-    from reuleauxcoder.interfaces.events import UIEventBus
+    from reuleauxcoder.app.ui_events import UIEventBus
     from reuleauxcoder.domain.cancellation import CancellationSignal
 
 from reuleauxcoder import __version__
@@ -144,7 +144,7 @@ class MCPClient:
         """Emit a UI event if bus is available."""
         if not self._ui_bus:
             return
-        from reuleauxcoder.interfaces.events import UIEventKind
+        from reuleauxcoder.app.ui_events import UIEventKind
 
         method = getattr(self._ui_bus, level, None)
         if method:

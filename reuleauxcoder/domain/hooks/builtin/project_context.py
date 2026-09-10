@@ -421,7 +421,7 @@ class ProjectContextStartupNotifier(ObserverHook[RunnerStartupContext]):
             found.append(filename)
         if found and (ui_bus := (context.metadata or {}).get("ui_bus")):
             try:
-                from reuleauxcoder.interfaces.events import UIEventKind
+                from reuleauxcoder.app.ui_events import UIEventKind
 
                 names = ", ".join(found)
                 ui_bus.info(

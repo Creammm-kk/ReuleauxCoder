@@ -1,4 +1,4 @@
-"""Shared approval-to-interaction adapter used by every interface."""
+"""Application-owned adapter from approval decisions to interaction requests."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from reuleauxcoder.domain.approval import (
     ApprovalHandler,
     PendingApproval,
 )
-from reuleauxcoder.interfaces.interactions import (
+from reuleauxcoder.app.interaction_contracts import (
     ReviewContext,
     ReviewGrantOption,
     ReviewRequest,

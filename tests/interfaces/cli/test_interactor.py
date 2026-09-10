@@ -1,6 +1,6 @@
 from reuleauxcoder.interfaces.cli.interactor import CLIUIInteractor
-from reuleauxcoder.interfaces.events import UIEventBus, UIEventKind, UIEventLevel
-from reuleauxcoder.interfaces.interactions import (
+from reuleauxcoder.app.ui_events import UIEventBus, UIEventKind, UIEventLevel
+from reuleauxcoder.app.interaction_contracts import (
     InputTextRequest,
     ReviewGrantOption,
     ReviewRequest,

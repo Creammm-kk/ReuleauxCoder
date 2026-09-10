@@ -3,7 +3,7 @@ from __future__ import annotations
 import threading
 
 from reuleauxcoder.interfaces.cli.output import CLIOutputCoordinator
-from reuleauxcoder.interfaces.events import UIEvent
+from reuleauxcoder.app.ui_events import UIEvent
 
 
 class _Renderer:

@@ -19,7 +19,7 @@ from reuleauxcoder.domain.runtime.events import (
     RuntimeEvent,
     SubagentJobChanged,
 )
-from reuleauxcoder.interfaces.events import (
+from reuleauxcoder.app.ui_events import (
     InteractionPromptPayload,
     RuntimeIssueSink,
     RuntimeEventPayload,
@@ -27,7 +27,7 @@ from reuleauxcoder.interfaces.events import (
     ViewEventPayload,
     deliver_runtime_issue,
 )
-from reuleauxcoder.interfaces.interactions import ReviewRequest
+from reuleauxcoder.app.interaction_contracts import ReviewRequest
 from reuleauxcoder.interfaces.tui.formatting import (
     fragments_to_visual_lines as _fragments_to_visual_lines,
     wrap_fragments as _wrap_fragments,

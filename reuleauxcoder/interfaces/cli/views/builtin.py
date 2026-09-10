@@ -26,7 +26,7 @@ from reuleauxcoder.app.commands.view_models import (
     TokenUsageViewModel,
 )
 from reuleauxcoder.extensions.mcp.models import MCPServersView
-from reuleauxcoder.interfaces.events import ViewEventPayload
+from reuleauxcoder.app.ui_events import ViewEventPayload
 from reuleauxcoder.presentation.policy import fold_text
 from reuleauxcoder.presentation.semantics import DisplayTone
 

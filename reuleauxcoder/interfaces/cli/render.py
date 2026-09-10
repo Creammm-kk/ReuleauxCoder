@@ -36,7 +36,7 @@ from reuleauxcoder.interfaces.cli.streaming import (
     CLIStreamPresenter,
     find_committed_boundary,
 )
-from reuleauxcoder.interfaces.events import (
+from reuleauxcoder.app.ui_events import (
     ReasoningNoticePayload,
     InteractionPromptPayload,
     RemoteStreamPayload,

@@ -3,7 +3,7 @@ from reuleauxcoder.domain.context.checkpoint import CompactionCheckpoint
 from reuleauxcoder.domain.context.manager import ContextManager
 from reuleauxcoder.domain.context.rounds import group_api_rounds, recent_round_start
 from reuleauxcoder.domain.context.provider import ProviderCompactionResult
-from reuleauxcoder.interfaces.events import UIEventBus
+from reuleauxcoder.app.ui_events import UIEventBus
 
 
 def test_round_group_keeps_parallel_tool_outputs_with_call() -> None:

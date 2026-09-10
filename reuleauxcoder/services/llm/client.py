@@ -26,7 +26,7 @@ from reuleauxcoder.domain.llm.errors import LLMRequestCancelled
 from reuleauxcoder.domain.llm.models import ToolCall, LLMResponse
 from reuleauxcoder.domain.runtime.performance import RuntimePerformanceMonitor
 from reuleauxcoder.infrastructure.fs.paths import get_diagnostics_dir
-from reuleauxcoder.interfaces.events import UIEventBus, UIEventKind
+from reuleauxcoder.app.ui_events import UIEventBus, UIEventKind
 from reuleauxcoder.services.llm.diagnostics import (
     persist_llm_error_diagnostic,
     snapshot_messages,

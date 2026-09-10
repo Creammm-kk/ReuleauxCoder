@@ -25,7 +25,7 @@ if TYPE_CHECKING:
     from reuleauxcoder.extensions.subagent.manager import SubagentManager
     from reuleauxcoder.infrastructure.persistence.notes_store import NoteStore
     from reuleauxcoder.infrastructure.version_control import GitMonitor
-    from reuleauxcoder.interfaces.interactions import UIInteractor
+    from reuleauxcoder.app.interaction_contracts import UIInteractor
 
 from reuleauxcoder.domain.agent.events import AgentEvent, AgentEventType
 from reuleauxcoder.domain.agent.loop import AgentLoop

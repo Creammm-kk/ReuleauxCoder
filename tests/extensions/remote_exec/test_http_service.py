@@ -51,7 +51,7 @@ from reuleauxcoder.extensions.tools.backend import ExecutionContext, LocalToolBa
 from reuleauxcoder.interfaces.entrypoint.runner import (
     _default_create_remote_artifact_provider,
 )
-from reuleauxcoder.interfaces.events import UIEventBus
+from reuleauxcoder.app.ui_events import UIEventBus
 
 
 _URLOPEN = request.build_opener(request.ProxyHandler({})).open

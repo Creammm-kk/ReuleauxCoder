@@ -54,14 +54,14 @@ from reuleauxcoder.interfaces.tui.virtual_transcript import (
 )
 import reuleauxcoder.interfaces.tui.application as mini_tui_module
 import reuleauxcoder.interfaces.tui.event_adapter as event_adapter_module
-from reuleauxcoder.interfaces.events import (
+from reuleauxcoder.app.ui_events import (
     InteractionPromptPayload,
     RuntimeEventPayload,
     UIEvent,
     UIEventBus,
     UIEventKind,
 )
-from reuleauxcoder.interfaces.interactions import (
+from reuleauxcoder.app.interaction_contracts import (
     ChoiceItem,
     ChooseOneRequest,
     ConfirmRequest,

@@ -18,7 +18,7 @@ from reuleauxcoder.domain.runtime.events import (
     ToolOutputDelta,
     runtime_event_delivery_class,
 )
-from reuleauxcoder.interfaces.events import (
+from reuleauxcoder.app.ui_events import (
     RemoteStreamPayload,
     RuntimeEventPayload,
     UIEvent,

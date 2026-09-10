@@ -22,7 +22,7 @@ from reuleauxcoder.app.commands.shared import (
 )
 from reuleauxcoder.app.commands.specs import ActionSpec, DuringTurnPolicy
 from reuleauxcoder.extensions.skills.models import SkillsSummary, SkillsViewModel
-from reuleauxcoder.interfaces.events import UIEventKind
+from reuleauxcoder.app.ui_events import UIEventKind
 
 
 @dataclass(frozen=True, slots=True)

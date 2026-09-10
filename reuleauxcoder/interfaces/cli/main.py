@@ -14,7 +14,7 @@ from pathlib import Path
 from rich.console import Console
 from rich.text import Text
 
-from reuleauxcoder.interfaces.approval import make_approval_handler
+from reuleauxcoder.app.runtime.approval_interaction import make_approval_handler
 from reuleauxcoder.interfaces.cli.args import parse_args
 from reuleauxcoder.interfaces.cli.registration import create_cli_registration
 from reuleauxcoder.interfaces.cli.render import CLIRenderer
@@ -23,7 +23,7 @@ from reuleauxcoder.interfaces.cli.output import CLIOutputCoordinator
 from reuleauxcoder.interfaces.cli.repl import run_repl
 from reuleauxcoder.interfaces.cli.theme import DEFAULT_CLI_THEME
 from reuleauxcoder.interfaces.entrypoint import AppRunner, AppOptions
-from reuleauxcoder.interfaces.events import AgentEventBridge
+from reuleauxcoder.app.ui_events import AgentEventBridge
 from reuleauxcoder.interfaces.ui_registry import UIRegistry
 from reuleauxcoder.presentation.semantics import DisplayTone
 from reuleauxcoder.domain.context.manager import (

@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Protocol
 
-from reuleauxcoder.interfaces.events import UIEvent
+from reuleauxcoder.app.ui_events import UIEvent
 
 
 class ViewRenderer(Protocol):

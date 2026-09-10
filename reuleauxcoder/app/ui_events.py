@@ -19,7 +19,7 @@ from reuleauxcoder.domain.runtime.events import (
     agent_event_to_runtime_event,
     runtime_event_delivery_class,
 )
-from reuleauxcoder.interfaces.interactions import InteractionRequest
+from reuleauxcoder.app.interaction_contracts import InteractionRequest
 
 
 class UIEventLevel(Enum):

@@ -4,7 +4,7 @@ from reuleauxcoder.interfaces.entrypoint.remote_relay import (
     export_remote_console,
 )
 from reuleauxcoder.interfaces.cli.render import CLIRenderer
-from reuleauxcoder.interfaces.events import UIEvent
+from reuleauxcoder.app.ui_events import UIEvent
 
 
 def test_remote_console_honors_width_and_disables_ansi() -> None:

@@ -7,8 +7,8 @@ from reuleauxcoder.domain.approval import (
     PendingApproval,
 )
 from reuleauxcoder.domain.config.models import ApprovalRuleConfig
-from reuleauxcoder.interfaces.approval import make_approval_handler
-from reuleauxcoder.interfaces.interactions import ReviewResponse
+from reuleauxcoder.app.runtime.approval_interaction import make_approval_handler
+from reuleauxcoder.app.interaction_contracts import ReviewResponse
 
 
 class _ReviewInteractor:

@@ -48,7 +48,7 @@ from reuleauxcoder.extensions.remote_exec.protocol import (
     RelayEnvelope,
 )
 from reuleauxcoder.extensions.remote_exec.server import RelayServer
-from reuleauxcoder.interfaces.events import UIEventBus, UIEventKind
+from reuleauxcoder.app.ui_events import UIEventBus, UIEventKind
 
 
 @dataclass

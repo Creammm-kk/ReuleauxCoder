@@ -2,38 +2,14 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from enum import Enum
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from reuleauxcoder.app.commands.capabilities import UIProfile
+
 if TYPE_CHECKING:
-    from reuleauxcoder.interfaces.interactions import UIInteractor
+    from reuleauxcoder.app.interaction_contracts import UIInteractor
     from reuleauxcoder.interfaces.view_registry import ViewRendererRegistry
-
-
-class UICapability(str, Enum):
-    """Declared capability supported by a UI implementation."""
-
-    TEXT_INPUT = "text_input"
-    STREAM_OUTPUT = "stream_output"
-    PALETTE = "palette"
-    BUTTONS = "buttons"
-    MENUS = "menus"
-    TABS = "tabs"
-    MODAL = "modal"
-    DIFF_REVIEW = "diff_review"
-    TEXT_SELECT = "text_select"
-    TEXT_EDIT = "text_edit"
-    SECURE_TEXT_INPUT = "secure_text_input"
-
-
-@dataclass(frozen=True, slots=True)
-class UIProfile:
-    """Identity and capability declaration for a UI target."""
-
-    ui_id: str
-    display_name: str
-    capabilities: frozenset[UICapability] = field(default_factory=frozenset)
 
 
 @dataclass(frozen=True, slots=True)

@@ -13,7 +13,7 @@ from reuleauxcoder.app.commands.specs import (
     CommandParseContext,
     TriggerKind,
 )
-from reuleauxcoder.interfaces.ui_registry import UIProfile
+from reuleauxcoder.app.commands.capabilities import UIProfile
 
 
 @dataclass(frozen=True, slots=True)

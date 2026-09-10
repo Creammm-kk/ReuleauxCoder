@@ -9,8 +9,8 @@ from typing import TYPE_CHECKING
 from reuleauxcoder.app.commands import CommandContext, dispatch_command, parse_command
 from reuleauxcoder.app.commands.models import CommandEffect
 from reuleauxcoder.app.commands.registry import ActionRegistry
-from reuleauxcoder.interfaces.events import UIEventBus, UIEventKind
-from reuleauxcoder.interfaces.ui_registry import UIProfile
+from reuleauxcoder.app.ui_events import UIEventBus, UIEventKind
+from reuleauxcoder.app.commands.capabilities import UIProfile
 
 if TYPE_CHECKING:
     from reuleauxcoder.domain.agent.agent import Agent

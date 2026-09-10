@@ -19,13 +19,13 @@ from reuleauxcoder.domain.runtime.events import (
     TurnFinished,
     TurnStarted,
 )
-from reuleauxcoder.interfaces.events import (
+from reuleauxcoder.app.ui_events import (
     InteractionPromptPayload,
     RuntimeEventPayload,
     UIEvent,
     UIEventKind,
 )
-from reuleauxcoder.interfaces.interactions import ConfirmRequest
+from reuleauxcoder.app.interaction_contracts import ConfirmRequest
 from reuleauxcoder.interfaces.tui.event_queue import (
     BoundedUIEventQueue,
     EventPutFailureReason,

@@ -1,4 +1,4 @@
-"""Shared UI interaction protocols and request/response models."""
+"""Application-owned interaction request/response contracts."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Literal, Protocol, TypeAlias
 from reuleauxcoder.domain.approval import ApprovalQueueStatus, ApprovalSection
 
 if TYPE_CHECKING:
-    from reuleauxcoder.interfaces.events import UIEvent
+    from reuleauxcoder.app.ui_events import UIEvent
 
 
 @dataclass(slots=True)
@@ -146,6 +146,19 @@ class ReviewResponse:
 InteractionRequest: TypeAlias = (
     ConfirmRequest | ChooseOneRequest | InputTextRequest | ReviewRequest
 )
+
+
+def cancelled_response(request: InteractionRequest, reason: str):
+    """The same cancellation result for queued and visible interactions."""
+    if isinstance(request, ReviewRequest):
+        return ReviewResponse(False, cancelled=True, reason=reason)
+    if isinstance(request, ConfirmRequest):
+        return ConfirmResponse(False, cancelled=True)
+    if isinstance(request, ChooseOneRequest):
+        return ChooseOneResponse(None, cancelled=True)
+    if isinstance(request, InputTextRequest):
+        return InputTextResponse(None, cancelled=True)
+    raise TypeError(f"Unknown interaction request: {type(request).__name__}")
 
 
 class UIInteractor(Protocol):

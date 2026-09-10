@@ -7,7 +7,7 @@ from reuleauxcoder.extensions.command.builtin.mcp import (
     _handle_show_mcp_servers,
     _handle_toggle_mcp_server,
 )
-from reuleauxcoder.interfaces.events import UIEventKind
+from reuleauxcoder.app.ui_events import UIEventKind
 
 
 class FakeTool:

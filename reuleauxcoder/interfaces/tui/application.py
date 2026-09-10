@@ -54,11 +54,11 @@ from reuleauxcoder.interfaces.tui.style import (
     MINI_TUI_STYLE,
 )
 from reuleauxcoder.interfaces.tui.virtual_transcript import VirtualTranscriptControl
-from reuleauxcoder.interfaces.events import (
+from reuleauxcoder.app.ui_events import (
     UIEvent,
     UIEventKind,
 )
-from reuleauxcoder.interfaces.interactions import (
+from reuleauxcoder.app.interaction_contracts import (
     ChooseOneRequest,
     ConfirmRequest,
     InputTextRequest,

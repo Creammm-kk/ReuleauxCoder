@@ -9,7 +9,7 @@ from reuleauxcoder.domain.agent.events import AgentEvent
 from reuleauxcoder.domain.runtime.events import agent_event_to_runtime_event
 from reuleauxcoder.interfaces.cli.render import CLIRenderer
 from reuleauxcoder.interfaces.cli.views.registry import create_cli_view_registry
-from reuleauxcoder.interfaces.events import UIEvent, UIEventBus, UIEventKind
+from reuleauxcoder.app.ui_events import UIEvent, UIEventBus, UIEventKind
 from reuleauxcoder.interfaces.view_registry import ViewRendererRegistry
 from reuleauxcoder.presentation.models import AssistantCell, NoticeCell, ToolCell
 

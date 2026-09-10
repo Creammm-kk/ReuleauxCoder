@@ -14,8 +14,8 @@ from reuleauxcoder.domain.llm.models import (
     LLMResponse,
     ToolCall,
 )
-from reuleauxcoder.interfaces.events import UIEventBus, UIEventLevel
-from reuleauxcoder.interfaces.events import RuntimeEventPayload
+from reuleauxcoder.app.ui_events import UIEventBus, UIEventLevel
+from reuleauxcoder.app.ui_events import RuntimeEventPayload
 from reuleauxcoder.domain.runtime.events import OperationPhaseChanged
 from reuleauxcoder.domain.runtime.performance import RuntimePerformanceMonitor
 from reuleauxcoder.services.llm.client import (

@@ -9,7 +9,7 @@ from reuleauxcoder.domain.config.models import Config
 from reuleauxcoder.domain.hooks.registry import HookRegistry
 from reuleauxcoder.extensions.lsp.manager import LspManager
 from reuleauxcoder.interfaces.entrypoint.runner import AppRunner
-from reuleauxcoder.interfaces.events import UIEventBus
+from reuleauxcoder.app.ui_events import UIEventBus
 
 
 def test_init_lsp_registers_without_path_probe_or_worker() -> None:

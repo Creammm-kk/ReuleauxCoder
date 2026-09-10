@@ -35,7 +35,7 @@ from reuleauxcoder.app.runtime.session_state import get_runtime_approval_config
 from reuleauxcoder.infrastructure.persistence.workspace_config_store import (
     WorkspaceConfigStore,
 )
-from reuleauxcoder.interfaces.events import UIEventKind
+from reuleauxcoder.app.ui_events import UIEventKind
 
 
 @dataclass(frozen=True, slots=True)

@@ -38,7 +38,7 @@ from reuleauxcoder.infrastructure.persistence.session_store import (
     SessionRestoreError,
     SessionStore,
 )
-from reuleauxcoder.interfaces.events import UIEventKind
+from reuleauxcoder.app.ui_events import UIEventKind
 
 
 @dataclass(frozen=True, slots=True)

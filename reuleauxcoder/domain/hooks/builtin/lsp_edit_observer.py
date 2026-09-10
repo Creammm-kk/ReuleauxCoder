@@ -30,7 +30,7 @@ from reuleauxcoder.extensions.lsp.diagnostic_outcomes import (
     render_diagnostic_outcomes,
     safe_observer_error_type,
 )
-from reuleauxcoder.interfaces.events import UIEventKind
+from reuleauxcoder.app.ui_events import UIEventKind
 
 EDIT_TOOLS = frozenset({"edit_file", "write_file"})
 _DIAGNOSTICS_POLL_DEADLINE = 2.5  # seconds — short poll for instant feedback

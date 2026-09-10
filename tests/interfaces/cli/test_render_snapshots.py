@@ -18,7 +18,7 @@ from reuleauxcoder.domain.agent.tool_outcome import (
     ToolOutcomeStatus,
 )
 from reuleauxcoder.interfaces.cli.render import CLIRenderer, show_banner
-from reuleauxcoder.interfaces.events import UIEvent, UIEventKind
+from reuleauxcoder.app.ui_events import UIEvent, UIEventKind
 from reuleauxcoder.interfaces.view_registry import ViewRendererRegistry
 from reuleauxcoder.presentation import (
     NotificationThreshold,

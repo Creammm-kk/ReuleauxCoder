@@ -6,7 +6,7 @@ from rich.console import Console
 from rich.table import Table
 from rich.text import Text
 
-from reuleauxcoder.interfaces.interactions import (
+from reuleauxcoder.app.interaction_contracts import (
     ChooseOneRequest,
     ConfirmRequest,
     InputTextRequest,

@@ -26,7 +26,7 @@ from reuleauxcoder.extensions.mcp.runtime import (
     toggle_mcp_server,
 )
 from reuleauxcoder.extensions.mcp.models import MCPServersView
-from reuleauxcoder.interfaces.events import UIEventKind
+from reuleauxcoder.app.ui_events import UIEventKind
 
 
 @dataclass(frozen=True, slots=True)

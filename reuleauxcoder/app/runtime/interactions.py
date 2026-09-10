@@ -9,8 +9,8 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any, Iterator, TypeVar
 
-from reuleauxcoder.interfaces.events import UIEvent
-from reuleauxcoder.interfaces.interactions import (
+from reuleauxcoder.app.ui_events import UIEvent
+from reuleauxcoder.app.interaction_contracts import (
     ChooseOneRequest,
     ChooseOneResponse,
     ConfirmRequest,

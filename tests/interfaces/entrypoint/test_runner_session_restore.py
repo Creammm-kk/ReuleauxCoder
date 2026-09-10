@@ -22,7 +22,7 @@ from reuleauxcoder.interfaces.entrypoint.runner import (
     AppOptions,
     AppRunner,
 )
-from reuleauxcoder.interfaces.events import UIEventBus, UIEventKind, UIEventLevel
+from reuleauxcoder.app.ui_events import UIEventBus, UIEventKind, UIEventLevel
 
 
 def _session_entry_names(path: Path) -> set[str]:

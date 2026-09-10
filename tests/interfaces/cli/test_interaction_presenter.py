@@ -16,7 +16,7 @@ from reuleauxcoder.interfaces.entrypoint.remote_relay import (
     create_remote_console,
     export_remote_console,
 )
-from reuleauxcoder.interfaces.interactions import (
+from reuleauxcoder.app.interaction_contracts import (
     InputTextRequest,
     ReviewGrantOption,
     ReviewRequest,

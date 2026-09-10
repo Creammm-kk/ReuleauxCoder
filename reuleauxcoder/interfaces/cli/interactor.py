@@ -8,8 +8,8 @@ import threading
 
 from prompt_toolkit import prompt as pt_prompt
 
-from reuleauxcoder.interfaces.events import UIEvent, UIEventBus, UIEventKind
-from reuleauxcoder.interfaces.interactions import (
+from reuleauxcoder.app.ui_events import UIEvent, UIEventBus, UIEventKind
+from reuleauxcoder.app.interaction_contracts import (
     ChooseOneRequest,
     ChooseOneResponse,
     ConfirmRequest,

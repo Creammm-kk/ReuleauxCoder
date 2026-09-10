@@ -5,7 +5,7 @@ from reuleauxcoder.interfaces.tui.command_popup import (
     build_popup_entries,
     filter_entries,
 )
-from reuleauxcoder.interfaces.ui_registry import UICapability, UIProfile
+from reuleauxcoder.app.commands.capabilities import UICapability, UIProfile
 
 
 _PROFILE = UIProfile(

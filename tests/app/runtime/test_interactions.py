@@ -4,7 +4,7 @@ import threading
 import time
 
 from reuleauxcoder.app.runtime.interactions import InteractionCoordinator
-from reuleauxcoder.interfaces.interactions import (
+from reuleauxcoder.app.interaction_contracts import (
     ChooseOneResponse,
     ConfirmRequest,
     ConfirmResponse,

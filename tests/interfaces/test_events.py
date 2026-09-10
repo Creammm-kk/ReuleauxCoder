@@ -10,7 +10,7 @@ from reuleauxcoder.domain.runtime.events import (
     ToolCallFinished,
     ToolCallStarted,
 )
-from reuleauxcoder.interfaces.events import (
+from reuleauxcoder.app.ui_events import (
     AgentEventBridge,
     UIEvent,
     UIEventBus,

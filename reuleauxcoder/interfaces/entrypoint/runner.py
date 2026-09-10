@@ -70,7 +70,7 @@ from reuleauxcoder.interfaces.entrypoint.session_lifecycle import (
     observe_session_callback,
     restore_session,
 )
-from reuleauxcoder.interfaces.events import UIEventBus, UIEventKind
+from reuleauxcoder.app.ui_events import UIEventBus, UIEventKind
 from reuleauxcoder.infrastructure.persistence.notes_store import NoteStore
 from reuleauxcoder.infrastructure.version_control import GitMonitor
 from reuleauxcoder.services.llm.client import LLM

@@ -5,7 +5,7 @@ from __future__ import annotations
 import queue
 import threading
 
-from reuleauxcoder.interfaces.events import UIEvent
+from reuleauxcoder.app.ui_events import UIEvent
 
 
 class CLIOutputCoordinator:

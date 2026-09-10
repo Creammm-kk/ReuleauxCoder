@@ -4,7 +4,7 @@ from reuleauxcoder.app.commands.dispatcher import dispatch_command
 from reuleauxcoder.app.commands.models import CommandEffect
 from reuleauxcoder.app.commands.registry import ActionRegistry
 from reuleauxcoder.app.commands.specs import ActionSpec, TriggerKind, TriggerSpec
-from reuleauxcoder.interfaces.ui_registry import UICapability, UIProfile
+from reuleauxcoder.app.commands.capabilities import UICapability, UIProfile
 
 
 CLI_PROFILE = UIProfile(

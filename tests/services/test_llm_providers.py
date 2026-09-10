@@ -10,7 +10,7 @@ from reuleauxcoder.domain.config.models import ModelProfileConfig
 from reuleauxcoder.domain.llm.protocols import LLMProtocol
 from reuleauxcoder.domain.runtime.events import OperationPhaseChanged
 from reuleauxcoder.domain.runtime.performance import RuntimePerformanceMonitor
-from reuleauxcoder.interfaces.events import RuntimeEventPayload, UIEventBus
+from reuleauxcoder.app.ui_events import RuntimeEventPayload, UIEventBus
 from reuleauxcoder.services.llm.client import LLM
 from reuleauxcoder.services.llm.factory import build_llm_from_settings
 from reuleauxcoder.services.llm.providers import (

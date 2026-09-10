@@ -24,7 +24,7 @@ from reuleauxcoder.app.commands.view_models import (
     SubagentJobsViewModel,
     SubagentJobViewModel,
 )
-from reuleauxcoder.interfaces.events import UIEventKind
+from reuleauxcoder.app.ui_events import UIEventKind
 
 
 def get_subagent_manager(agent):

@@ -1,6 +1,6 @@
 from reuleauxcoder.app.commands.loader import create_builtin_action_registry
 from reuleauxcoder.extensions.command.builtin import builtin_command_registrars
-from reuleauxcoder.interfaces.ui_registry import UICapability, UIProfile
+from reuleauxcoder.app.commands.capabilities import UICapability, UIProfile
 
 
 CLI_PROFILE = UIProfile(

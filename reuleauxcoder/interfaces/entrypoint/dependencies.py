@@ -34,8 +34,8 @@ from reuleauxcoder.extensions.tools.backend import (
 )
 from reuleauxcoder.extensions.tools.registry import build_tools
 from reuleauxcoder.extensions.skills.service import SkillsService
-from reuleauxcoder.interfaces.events import UIEventBus, UIEventKind
-from reuleauxcoder.interfaces.interactions import UIInteractor
+from reuleauxcoder.app.ui_events import UIEventBus, UIEventKind
+from reuleauxcoder.app.interaction_contracts import UIInteractor
 from reuleauxcoder.infrastructure.persistence.session_store import SessionStore
 from reuleauxcoder.services.config.loader import ConfigLoader
 from reuleauxcoder.services.llm.client import LLM

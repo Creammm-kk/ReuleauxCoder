@@ -34,7 +34,7 @@ from reuleauxcoder.domain.llm.context_messages import (
 
 if TYPE_CHECKING:
     from reuleauxcoder.services.llm.client import LLM
-    from reuleauxcoder.interfaces.events import UIEventBus
+    from reuleauxcoder.app.ui_events import UIEventBus
 
 # Tiktoken's public encoding constructor downloads this vocabulary on its first
 # cache miss. Its downloader has no timeout, so never call it until we have put
@@ -1272,7 +1272,7 @@ class ContextManager:
 
     @staticmethod
     def _context_event_kind():
-        from reuleauxcoder.interfaces.events import UIEventKind
+        from reuleauxcoder.app.ui_events import UIEventKind
 
         return UIEventKind.CONTEXT
 

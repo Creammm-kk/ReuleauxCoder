@@ -33,9 +33,9 @@ from reuleauxcoder.interfaces.cli.interaction_presenter import (
     interaction_constraints,
     render_interaction_request,
 )
-from reuleauxcoder.interfaces.approval import make_approval_handler
+from reuleauxcoder.app.runtime.approval_interaction import make_approval_handler
 from reuleauxcoder.app.runtime.interactions import InteractionCoordinator
-from reuleauxcoder.interfaces.interactions import (
+from reuleauxcoder.app.interaction_contracts import (
     ChooseOneRequest,
     ChooseOneResponse,
     ConfirmRequest,
@@ -45,7 +45,7 @@ from reuleauxcoder.interfaces.interactions import (
     ReviewRequest,
     ReviewResponse,
 )
-from reuleauxcoder.interfaces.events import AgentEventBridge, UIEventBus, UIEventKind
+from reuleauxcoder.app.ui_events import AgentEventBridge, UIEventBus, UIEventKind
 from reuleauxcoder.interfaces.entrypoint.session_lifecycle import (
     observe_session_callback,
 )
