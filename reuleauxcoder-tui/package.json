@@ -1,0 +1,30 @@
+{
+  "name": "@reuleauxcoder/tui",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Independent React terminal frontend for ReuleauxCoder",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "check": "tsc --noEmit -p tsconfig.json",
+    "test": "npm run build && node --import tsx --test test/*.test.ts*"
+  },
+  "dependencies": {
+    "ink": "7.1.1",
+    "marked": "18.0.12",
+    "react": "19.3.0",
+    "slice-ansi": "9.0.0",
+    "string-width": "8.2.2",
+    "wrap-ansi": "10.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.2",
+    "@types/react": "19.3.0",
+    "ink-testing-library": "4.0.0",
+    "tsx": "4.23.13",
+    "typescript": "7.0.2"
+  }
+}
