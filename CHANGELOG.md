@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## 0.9.0 - 2026-09-10
+
+- Migrated chat, slash commands and approvals to a shared bidirectional JSON-RPC runtime, with command-owned panels and typed actions for independent frontends.
+- Added a React + Ink TUI with configurable semantic themes, responsive session/Git sidebar, guided approvals, compact tool groups, Markdown reasoning, visible queues and a collapsing startup header.
+- Replaced the Python mini-TUI with a linear CLI using native terminal scrollback, while preserving command and interaction support through the same runtime.
+- Bundled the TUI and its JavaScript dependencies into wheels and source distributions. `rcoder` selects the TUI when Node >=22 and a terminal are available, explains CLI fallback, and provides explicit `rcoder-cli` and `rcoder-tui` entry points without an npm install step.
+- Made new sessions discoverable immediately and checkpointed response, reasoning and tool output for recovery after unexpected interruption. Restored partial output is marked as interrupted without automatically replaying work; the last pending batch and unsent drafts are not covered.
+- Fixed stopping-state cleanup, output-follow scrolling and Windows CLI prompt cancellation coverage; added frontend, packaging and isolated-install CI checks.
+- Removed retired adapters, duplicate command registration and redundant state, and made unexpected command and startup failures propagate with diagnostics.
+
 ## 0.8.2 - 2026-09-01
 
 - Fixed Responses fallback replay to encode assistant text as `output_text`, preventing invalid `input_text` payloads and intermittent HTTP 400 failures after context reconstruction.
