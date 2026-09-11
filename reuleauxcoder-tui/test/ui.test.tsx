@@ -2,6 +2,7 @@ import React from 'react';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {PassThrough} from 'node:stream';
+import {setTimeout as delay} from 'node:timers/promises';
 import {render} from 'ink-testing-library';
 import {RpcPeer} from '../src/protocol/peer.js';
 import {RuntimeClient} from '../src/protocol/client.js';
@@ -138,6 +139,48 @@ test('scrolling to the bottom restores shortcuts and follows subsequent output',
   await until(() => app.lastFrame()?.includes('History '));
   c.resize(100, 80);
   await until(() => c.offset === null && !app.lastFrame()?.includes('History '));
+});
+
+test('scroll bursts show intermediate rows, reverse immediately and yield to End or navigation', async t => {
+  const c = new TuiController(new RuntimeClient(new RpcPeer(new PassThrough(), new PassThrough())));
+  t.after(() => {c.client.peer.close(); c.dispose();});
+  c.session.connected = true;
+  c.session.add('assistant', 'Reuleaux', Array.from({length: 100}, (_, index) => `line ${index}`).join('\n'));
+  const app = render(<App controller={c}/>); t.after(() => app.cleanup());
+  await until(() => app.lastFrame()?.includes('line 99'));
+  const bottom = c.totalRows - c.viewportRows, page = c.viewportRows - 1;
+  const positions: number[] = [];
+  const unsubscribe = c.subscribe(() => {if (c.offset !== null) positions.push(c.offset);});
+  t.after(unsubscribe);
+  await c.key('', {pageUp: true});
+  await c.key('', {pageUp: true});
+  await until(() => c.offset === bottom - page * 2);
+  assert(positions.some(row => row < bottom && row > bottom - page * 2), 'paging renders intermediate rows');
+
+  await c.key('', {pageDown: true});
+  await until(() => c.offset !== null && c.offset > bottom - page * 2);
+  const reversed = c.offset!;
+  positions.length = 0;
+  await c.key('', {pageUp: true});
+  await until(() => c.offset === reversed - page);
+  assert(positions.every(row => row <= reversed), 'reversal drops outstanding travel in the old direction');
+  await c.key('', {pageUp: true});
+  await c.key('', {end: true});
+  await until(() => app.lastFrame()?.includes('line 99'));
+  await delay(180);
+  assert.equal(c.offset, null, 'an old scroll cannot undo End');
+
+  c.document('Scrollable details', Array.from({length: 80}, (_, index) => `Detail ${index}`).join('\n'));
+  await until(() => app.lastFrame()?.includes('Detail 0'));
+  const document = c.screen;
+  assert(document?.kind === 'document');
+  await c.key('', {pageDown: true});
+  await until(() => document.offset > 0);
+  await c.key('', {escape: true});
+  const stopped = document.offset;
+  await delay(180);
+  assert.equal(document.offset, stopped, 'dismissed panels stop scrolling');
+  assert.equal(c.screen, undefined);
 });
 
 test('workbench sidebar adapts to terminal size and preserves drafts and full session details', async t => {

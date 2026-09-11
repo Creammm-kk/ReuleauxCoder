@@ -9,6 +9,7 @@ import {InputHistory} from './history.js';
 import {HistoryBrowser} from './history-browser.js';
 import type {HistoryOperation} from '../protocol/history.js';
 import {fields} from '../ui/format.js';
+import {ScrollMotion} from './scroll.js';
 
 export interface Item {label: string; description: string; current?: boolean; select(): void | Promise<void>}
 export interface ListScreen {kind: 'list'; title: string; items: Item[]; index: number; filter: Editor; menu?: Menu; panel?: Panel}
@@ -45,6 +46,7 @@ export class TuiController extends EventEmitter {
   private historyIndex: number | null = null;
   private historyDraft = editor();
   private refreshTimer?: NodeJS.Timeout;
+  private scroll = new ScrollMotion(() => this.changed());
 
   constructor(readonly client: RuntimeClient, readonly history = new InputHistory()) {
     super();
@@ -110,6 +112,7 @@ export class TuiController extends EventEmitter {
   }
   resize(rows: number, columns: number) {
     if (this.rows === rows && this.columns === columns) return;
+    this.scroll.cancel();
     this.rows = rows; this.columns = columns;
     if (this.session.connected && !this.closing) this.client.resize(rows, columns);
     this.changed();
@@ -237,6 +240,7 @@ export class TuiController extends EventEmitter {
   }
   async key(input: string, key: Partial<Key> = {}) {
     if (this.closing) return;
+    if (!(key.upArrow || key.downArrow || key.pageUp || key.pageDown)) this.scroll.cancel();
     if (!this.active && this.screen?.kind === 'history' && !(key.ctrl && ['c', 'd', 'o', 'r', 'g'].includes(input))) {
       const browser = this.screen.browser;
       if (key.escape) {
@@ -257,11 +261,11 @@ export class TuiController extends EventEmitter {
       else if (input === 'a' && browser.current?.artifact_refs.length) {
         this.screens.push(this.list('History artifacts', browser.current.artifact_refs.map(artifact_ref => ({label: artifact_ref, description: 'Read archived content', select: () => this.showHistory('artifact', {artifact_ref, session_id: browser.page!.session_id})}))));
       } else if (key.upArrow || key.downArrow) {
-        if (browser.detailed) browser.offset = Math.max(0, browser.offset + (key.upArrow ? -1 : 1));
+        if (browser.detailed) this.scrollBy(key.upArrow ? -1 : 1);
         else browser.index = Math.max(0, Math.min((browser.page?.records.length ?? 1) - 1, browser.index + (key.upArrow ? -1 : 1)));
       } else if (key.pageUp || key.pageDown) {
         const delta = (key.pageUp ? -1 : 1) * this.viewportRows;
-        if (browser.detailed) browser.offset = Math.max(0, browser.offset + delta);
+        if (browser.detailed) this.scrollBy(delta);
         else browser.index = Math.max(0, Math.min((browser.page?.records.length ?? 1) - 1, browser.index + Math.trunc(delta / 2)));
       }
       else if (key.home) browser.offset = 0;
@@ -286,10 +290,8 @@ export class TuiController extends EventEmitter {
     if (input === 'OP' || input === '\x1bOP' || key.ctrl && input === 'g') {this.showHelp(); return;}
     if (key.pageUp || key.pageDown) {
       const delta = (key.pageUp ? -1 : 1) * Math.max(1, this.viewportRows - 1);
-      if (this.active) this.interactionOffset = Math.max(0, this.interactionOffset + delta);
-      else if (this.screen?.kind === 'document') this.screen.offset = Math.max(0, this.screen.offset + delta);
-      else if (this.screen?.kind === 'list') this.screen.index = Math.max(0, Math.min(this.listItems(this.screen).length - 1, this.screen.index + delta));
-      else this.offset = Math.max(0, Math.min(Math.max(0, this.totalRows - this.viewportRows), (this.offset ?? this.totalRows - this.viewportRows) + delta));
+      if (!this.active && this.screen?.kind === 'list') this.screen.index = Math.max(0, Math.min(this.listItems(this.screen).length - 1, this.screen.index + delta));
+      else this.scrollBy(delta);
       this.changed(); return;
     }
     if (this.active) {this.interactionKey(input, key); this.changed(); return;}
@@ -309,7 +311,7 @@ export class TuiController extends EventEmitter {
         else {screen.filter = edit(screen.filter, input, key); screen.index = 0;}
       } else if (screen.kind === 'document') {
         if (key.tab && screen.menu) this.screens.push(this.list(screen.menu.title, this.actionItems(screen.menu), screen.menu));
-        else if (key.upArrow || key.downArrow) screen.offset = Math.max(0, screen.offset + (key.upArrow ? -1 : 1));
+        else if (key.upArrow || key.downArrow) this.scrollBy(key.upArrow ? -1 : 1);
         else if (key.home) screen.offset = 0;
         else if (key.end) screen.offset = Number.MAX_SAFE_INTEGER;
       } else if (screen.kind === 'history') return;
@@ -344,7 +346,7 @@ export class TuiController extends EventEmitter {
       }
     } else if (key.home && !this.composer.text) this.offset = 0;
     else if (key.end && !this.composer.text) this.offset = null;
-    else if ((key.upArrow || key.downArrow) && !key.meta && !this.composer.text && this.historyIndex === null) this.offset = Math.max(0, Math.min(Math.max(0, this.totalRows - this.viewportRows), (this.offset ?? this.totalRows - this.viewportRows) + (key.upArrow ? -3 : 3)));
+    else if ((key.upArrow || key.downArrow) && !key.meta && !this.composer.text && this.historyIndex === null) this.scrollBy(key.upArrow ? -3 : 3);
     else if (key.upArrow || key.downArrow) {
       if (this.historyIndex === null) {this.historyDraft = this.composer; this.historyIndex = this.history.entries.length;}
       this.historyIndex = Math.max(0, Math.min(this.history.entries.length, this.historyIndex + (key.upArrow ? -1 : 1)));
@@ -353,6 +355,7 @@ export class TuiController extends EventEmitter {
     this.changed();
   }
   toggleDetails() {
+    this.scroll.cancel();
     this.expanded = !this.expanded;
     this.status = this.expanded
       ? 'Full details shown · F4 collapse output + reasoning'
@@ -366,9 +369,23 @@ export class TuiController extends EventEmitter {
   showHelp() {this.document('Keyboard help', 'Enter        Send / select\nShift+Enter  New line (Alt+Enter also works)\n/ or Ctrl+P  Open command menus\nEsc          Back / cancel interaction\nCtrl+C       Cancel interaction → close menu → clear draft → interrupt → confirm exit\nCtrl+D       Exit with an empty draft\nUp / Down    Scroll when input is empty; otherwise input history\nAlt+Up/Down  Input history, including with an empty draft\nPgUp / PgDn  Scroll the focused content\nHome / End   Transcript start / follow tail (empty composer)\nF1 / Ctrl+G  Keyboard help\nF2 / Ctrl+O  Session, plan, jobs and startup details\nF4 / Ctrl+R  Toggle full transcript details (all records)\nCtrl+A/E     Start / end of input\nCtrl+U/K/W   Delete before / after / previous word\n\nF4 shows:\n  Tool arguments and full received output, diffs, diagnostics and archive details.\n  Reasoning returned by the model.\nIt applies to all retained records in this conversation.\nPress F4 again to restore previews; PgUp/PgDn reads earlier content.\n\nApproval: 1/y/Enter approve once · 2/n deny · s session scope · f feedback\nSecret input is masked and never written to input history.');}
   async finish() {
     if (this.closing) return;
+    this.scroll.cancel();
     this.closing = true; clearInterval(this.refreshTimer); this.changed();
     try {const saved = await this.client.shutdown(); this.emit('exit', saved);}
     catch (error) {this.emit('exit', null, error);}
   }
-  dispose() {clearInterval(this.refreshTimer); clearTimeout(this.updateTimer); this.removeAllListeners();}
+  dispose() {this.scroll.cancel(); clearInterval(this.refreshTimer); clearTimeout(this.updateTimer); this.removeAllListeners();}
+
+  private scrollBy(delta: number) {
+    const active = this.active, screen = this.screen, cells = this.session.cells;
+    if (active) {
+      this.scroll.move(active, delta, () => this.interactionOffset, row => {this.interactionOffset = row;}, () => this.active === active);
+    } else if (screen?.kind === 'document' || screen?.kind === 'history' && screen.browser.detailed) {
+      const position = screen.kind === 'document' ? screen : screen.browser;
+      this.scroll.move(position, delta, () => position.offset, row => {position.offset = row;}, () => !this.active && this.screen === screen);
+    } else {
+      const bottom = Math.max(0, this.totalRows - this.viewportRows);
+      this.scroll.move(cells, delta, () => this.offset ?? bottom, row => {this.offset = row;}, () => !this.active && this.screen === screen && this.session.cells === cells, bottom);
+    }
+  }
 }
