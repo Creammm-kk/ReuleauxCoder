@@ -8,9 +8,9 @@ const compact = (text: string) => safe(text).replace(/\s+/g, ' ').trim();
 
 /** Play once per frontend mount, including when a small terminal hides the logo. */
 export function useLogoCollapse() {
-  // Terminal rows are indivisible: only relayout when another row can be released.
-  const elapsed = useMotion(true, {delay: 1880, duration: 360, interval: 120});
-  return Math.floor(elapsed / 120);
+  const elapsed = useMotion(true, {delay: 1880, duration: 360});
+  const progress = elapsed / 360;
+  return 3 * progress * progress * (3 - 2 * progress);
 }
 
 /** Decorative rows yield to the conversation in short terminals. */
@@ -27,9 +27,10 @@ export function consoleChrome(c: TuiController, width: number, phase: string, hi
     between(paint.accent(' █████▄   R E U L E A U X'), paint[role](connection), width),
     between(paint.accent(' ██  ██   ') + paint.info(model), paint.secondary(context), width),
     paint.accent(' ████▀'),
-    paint.accent(' ██  ██   ') + paint.muted(workspace),
+    paint.fade(paint.accent(' ██  ██   '), Math.min(1, 3 - hiddenLogoRows)) + paint.muted(workspace),
     '',
-  ].slice(hiddenLogoRows) : [
+  ].slice(Math.floor(hiddenLogoRows)).map((row, index) =>
+    index === 0 ? paint.fade(row, 1 - hiddenLogoRows % 1) : row) : [
     between(paint.accent(paint.bold('REULEAUX')) + paint.muted(' / CODER'), paint[role](connection), width),
     ...(c.rows >= 20 ? [between(paint.muted(workspace), paint.info(statusLine([model, context], Math.floor(width / 2))), width)] : []),
   ];

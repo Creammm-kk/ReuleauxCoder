@@ -11,9 +11,26 @@ import {TuiController} from '../src/state/controller.js';
 import {App} from '../src/ui/App.js';
 import {activityFor} from '../src/ui/activity.js';
 import {ComposerEdge} from '../src/ui/composer-edge.js';
+import {consoleChrome} from '../src/ui/chrome.js';
 import {editor} from '../src/state/editor.js';
 import {safe} from '../src/ui/format.js';
 import {until} from './helpers.js';
+
+test('logo collapse shades the disappearing edge between whole-row layout changes', t => {
+  const c = new TuiController(new RuntimeClient(new RpcPeer(new PassThrough(), new PassThrough())));
+  t.after(() => {c.client.peer.close(); c.dispose();});
+  c.resize(45, 140);
+  c.session.state = {...c.session.state, model: 'visible-model', workspace: '/visible-workspace'};
+  const first = consoleChrome(c, 138, 'Ready', 0.1);
+  const next = consoleChrome(c, 138, 'Ready', 0.6);
+  assert.deepEqual(first.header.map(safe), next.header.map(safe));
+  assert.notEqual(first.header[0], next.header[0], 'brightness advances without a row jump');
+  assert.deepEqual(first.header.slice(1), next.header.slice(1), 'facts below the edge stay stable');
+  const final = consoleChrome(c, 138, 'Ready', 3);
+  assert.equal(final.header.length, first.header.length - 3);
+  assert(final.header.join('\n').includes('visible-model'));
+  assert(final.header.join('\n').includes('/visible-workspace'));
+});
 
 test('composer motion keeps its geometry and stops for attention, idle and errors', async t => {
   const edge = (phase: 'working' | 'attention' | 'idle' | 'error') =>

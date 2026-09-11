@@ -106,6 +106,14 @@ function borderGlow(text: string, role: AccentRole, strength: number): string {
 }
 export const paint = {
   borderGlow,
+  // The disappearing edge blends into the configured surface between row moves.
+  fade: (text: string, visibility: number) => {
+    if (visibility >= 1) return text;
+    if (!current.background.startsWith('#')) return visibility < 0.5 ? `\x1b[2m${text}\x1b[22m` : text;
+    const background = [1, 3, 5].map(offset => parseInt(current.background.slice(offset, offset + 2), 16));
+    return text.replace(/\x1b\[38;2;(\d+);(\d+);(\d+)m/g, (_code, r, g, b) =>
+      `\x1b[38;2;${[r, g, b].map((value, index) => Math.round(background[index] + (Number(value) - background[index]) * visibility)).join(';')}m`);
+  },
   // Only brighten existing truecolor foregrounds. Preserve backgrounds, dark
   // badge text and ANSI palette colors; content is fully present from frame one.
   reveal: (text: string, progress: number) => text.replace(/\x1b\[38;2;(\d+);(\d+);(\d+)m/g, (code, r, g, b) => {
