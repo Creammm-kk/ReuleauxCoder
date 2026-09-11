@@ -183,6 +183,11 @@ All LSP operations are read-only and do **not** require approval.
 /skills enable <n>   Enable one skill
 /skills disable <n>  Disable one skill
 /tokens            Show token usage
+/goal              Manage a persistent goal (TUI panel or CLI controls)
+/goal create <objective>  Start a goal with the configured budget (unlimited by default)
+/goal pause        Let the current turn finish; disable automatic continuation
+/goal resume       Resume the saved goal
+/goal budget <tokens|none>  Set or remove the cumulative token limit
 /compact           Compress conversation context
 /save              Save session to disk
 /session           List saved sessions (`/session <#|id|latest>` restores one)
@@ -219,7 +224,8 @@ known command if within edit distance ≤ 2.
 - `/new` starts a fresh conversation and saves the previous one first when `session.auto_save` is enabled.
 - `/model` lists configured profiles and routing. Session switches do not rewrite global defaults; use `/model set-main` or `/model set-sub` for persisted defaults.
 - `/skills` shows discovered skills; `/skills reload` rescans workspace/user skill directories; `/skills enable|disable <name>` persists skill state in workspace config.
-- `/session` shows a numbered, newest-first list for the current fingerprint. Its preview is the latest real user request, not lifecycle metadata. Restore accepts the displayed number, a full ID, or `latest`; it saves the session being left when auto-save is enabled and replays the latest three user turns in the CLI. `rcoder -r <id>` restores directly on startup.
+- `/session` shows a numbered, newest-first list for the current fingerprint. Its preview is the latest real user request, or the goal objective when no user message exists. Restore accepts the displayed number, a full ID, or `latest`; it saves the session being left when auto-save is enabled and replays the latest three user turns in the CLI. `rcoder -r <id>` restores directly on startup.
+- `/goal` manages one persistent objective per session. The backend continues it between turns, prioritizes user input, and preserves status and cumulative usage across compaction and restore. Budgets default to unlimited and count input minus cached input plus output. See [Goal controls and accounting](docs/goals.md).
 - `/approval set` currently supports targets like `tool:<name>`, `mcp`, `mcp:<server>`, and `mcp:<server>:<tool>` with actions `allow`, `warn`, `require_approval`, or `deny`.
 - `/mcp enable <server>` and `/mcp disable <server>` update workspace config and try to apply the change at runtime.
 - `/thinking` shows reasoning content retained from the most recent turn. `/thinking inline` toggles inline streaming; the FORGE activity row advances as reasoning chunks arrive and remains in history. `/thinking effort` views or sets the session reasoning budget.

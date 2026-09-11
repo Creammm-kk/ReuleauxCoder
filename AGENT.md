@@ -236,7 +236,9 @@ Interactive remote chat streams host-rendered output and forwards approvals to t
 
 ## Configuration
 
-Workspace config is `.rcoder/config.yaml`; user config is `~/.rcoder/config.yaml`. Runtime sections are `app`, `models`, `modes`, `approval`, `prompt`, `skills`, `mcp`, `context`, `session`, `tool_output`, `shell`, `web`, `lsp`, `remote_exec`, `ui`, and `cli`.
+Workspace config is `.rcoder/config.yaml`; user config is `~/.rcoder/config.yaml`. Runtime sections are `app`, `models`, `modes`, `approval`, `prompt`, `skills`, `mcp`, `context`, `session`, `goal`, `tool_output`, `shell`, `web`, `lsp`, `remote_exec`, `ui`, and `cli`.
+
+`domain/goal.py` owns the single persisted session Goal. RuntimeServer admits automatic turns only after user/client work drains; CLI/TUI share `/goal` actions and snapshots over JSON-RPC. Goal changes use the existing ledger and runtime snapshot. Default token budget is unlimited; main, summary and goal-owned isolated-worker requests count input minus cached input plus output. Interrupt pauses the goal; restored active goals wait for frontend readiness. See `docs/goals.md` for controls, recovery and accounting limits.
 
 LLM-wide defaults use `app.request_mode` and `app.responses`; a profile may override them with `models.profiles.<name>.request_mode` and `.responses`. Responses currently requires `state: local`; `cache.mode` is `implicit` by default and may be set to `explicit` for models that support explicit breakpoints. `/model` profile switching reconfigures the provider, request mode and Responses cache policy together.
 
