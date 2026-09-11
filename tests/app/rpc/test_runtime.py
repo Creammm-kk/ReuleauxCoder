@@ -208,6 +208,31 @@ def test_operation_failure_preserves_input_and_reaches_caller(runtime, caplog):
     assert not runtime.client.state.running
 
 
+def test_chat_failure_recording_error_does_not_disconnect_backend(runtime, caplog):
+    def fail():
+        raise RuntimeError("primary operation failure")
+
+    def fail_recording(_error):
+        raise ValueError("diagnostic persistence failure")
+
+    runtime.loop.run = fail
+    runtime.server.commands.record_chat_failure = fail_recording
+
+    runtime.client.submit("trigger failure")
+
+    with pytest.raises(RpcError, match="primary operation failure"):
+        runtime.client.wait_idle()
+
+    assert "Failed to record chat failure" in caplog.text
+    assert not runtime.client.state.running
+
+    # A secondary persistence failure must not close the RPC peer.
+    runtime.client.submit("/help")
+    runtime.client.wait_idle()
+
+    assert not runtime.client.state.running
+
+
 def test_invalid_wire_action_does_not_start_an_operation(runtime):
     with pytest.raises(RpcError) as error:
         runtime.client.submit(ActionRequest("thinking.set_effort", {"level": []}))
