@@ -4,6 +4,7 @@ import {humanize} from '../state/menus.js';
 import {diff, fields, safe, wrap} from './format.js';
 import {keyHint, paint} from './theme.js';
 import {inputRows, line, selectionRows} from './viewport.js';
+import {historyRows} from './history.js';
 
 export interface PanelRows {title: string; rows: string[]; hint: string[]; navigation?: string}
 
@@ -48,6 +49,7 @@ export function panelRows(c: TuiController, width: number, height: number): Pane
     return {title, rows: rows.slice(c.interactionOffset, c.interactionOffset + height), hint, navigation: `PgUp/PgDn ${c.interactionOffset + 1}/${rows.length}`};
   }
   const screen = c.screen;
+  if (screen?.kind === 'history') return historyRows(screen.browser, width, height);
   if (screen?.kind === 'list') {
     const items = c.listItems(screen);
     screen.index = Math.min(screen.index, Math.max(0, items.length - 1));
@@ -60,7 +62,7 @@ export function panelRows(c: TuiController, width: number, height: number): Pane
       return separator >= 0 ? paint.info(row.slice(0, separator + 1)) + row.slice(separator + 1) : row;
     }).join('\n'), width);
     screen.offset = Math.min(screen.offset, Math.max(0, rows.length - height));
-    return {title: screen.title, rows: rows.slice(screen.offset, screen.offset + height), hint: [keyHint('↑↓ / PgUp/PgDn', 'scroll', paint.info), keyHint('Esc', 'back'), ...(screen.menu ? [keyHint('Tab', 'actions')] : [])], navigation: `${screen.offset + 1}/${rows.length}`};
+    return {title: screen.title, rows: rows.slice(screen.offset, screen.offset + height), hint: [...(screen.title === 'Session details' && c.client.info.history_query ? [keyHint('h', 'browse / search history')] : []), keyHint('↑↓ / PgUp/PgDn', 'scroll', paint.info), keyHint('Esc', 'back'), ...(screen.menu ? [keyHint('Tab', 'actions')] : [])], navigation: `${screen.offset + 1}/${rows.length}`};
   }
   if (screen?.kind === 'form') {
     const parameter = screen.action.parameters[screen.index];

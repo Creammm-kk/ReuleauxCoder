@@ -1,5 +1,6 @@
 import {EventEmitter} from 'node:events';
 import {RpcPeer} from './peer.js';
+import type {ArtifactPage, HistoryOperation, HistoryPage} from './history.js';
 import type {GitWorkspace} from './wire.js';
 import {actionRequest, cancellation, decode, emptyState, enumValue, record, tuple, type Action, type Json, type PendingInteraction, type RuntimeState, type UIEvent} from './wire.js';
 
@@ -73,6 +74,9 @@ export class RuntimeClient extends EventEmitter {
   async panel(payload: Json) {return decode(await this.peer.request('view.panel', {payload}));}
   async refresh() {this.update(decode(await this.peer.request('runtime.snapshot', {}, 5000)));}
   async git(): Promise<GitWorkspace | null> {return decode(await this.peer.request('runtime.git', {}, 5000));}
+  async history(operation: HistoryOperation, parameters: {[key: string]: Json}): Promise<{session_generation: number; page: HistoryPage | ArtifactPage}> {
+    return decode(await this.peer.request(`history.${operation}`, parameters));
+  }
   async interrupt(): Promise<{outcome: string; discarded_count: number}> {return decode(await this.peer.request('runtime.interrupt'));}
   resize(rows: number, columns: number) {this.peer.notify('runtime.resize', {rows, columns});}
   recordPerformance(elapsedMs: number) {this.peer.notify('runtime.record_performance', {category: 'ui_render', name: 'ink_render', elapsed_ms: elapsedMs});}

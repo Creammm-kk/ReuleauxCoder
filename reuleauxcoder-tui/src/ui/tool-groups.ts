@@ -11,7 +11,7 @@ export function transcriptGroups(cells: Cell[], expanded: boolean): Cell[][] {
     if (!expanded && cell.kind === 'reasoning' && cell.tone !== 'inline') continue;
     const previous = groups.at(-1);
     const samePoll = previous && isProcessPoll(cell) && isProcessPoll(previous[0]) && cell.tool!.arguments.session_id === previous[0].tool!.arguments.session_id;
-    if (!expanded && cell.kind === 'tool' && previous?.[0].kind === 'tool' && (samePoll || !isProcessPoll(cell) && !isProcessPoll(previous[0]))) previous.push(cell);
+    if (!expanded && cell.kind === 'tool' && previous?.[0].kind === 'tool' && previous.length < 128 && (samePoll || !isProcessPoll(cell) && !isProcessPoll(previous[0]))) previous.push(cell);
     else groups.push([cell]);
   }
   return groups;

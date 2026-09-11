@@ -17,6 +17,10 @@ export class SessionStore extends EventEmitter {
   startup: UIEvent[] = [];
   fatal: string | null = null;
   connected = false;
+  contentRevision = 0;
+  private dirtyIndex = 0;
+  private cellIndices = new WeakMap<Cell, number>();
+  private streaming = new Set<Cell>();
   git: GitWorkspace | null = null;
   private next = 0;
   private generation = 0;
@@ -28,13 +32,18 @@ export class SessionStore extends EventEmitter {
   add(kind: Cell['kind'], title: string, body: string, details = '', streaming = false): Cell {
     const cell: Cell = {id: String(++this.next), kind, title, body, details, revision: 0, streaming};
     this.cells.push(cell);
+    this.cellIndices.set(cell, this.cells.length - 1);
+    if (streaming) this.streaming.add(cell);
+    this.dirtyIndex = Math.min(this.dirtyIndex, this.cells.length - 1);
+    this.contentRevision++;
     return cell;
   }
   notice(message: string, tone = 'info') {const cell = this.add('notice', tone === 'error' ? 'Error' : 'Notice', message); cell.tone = tone; this.emit('change');}
-  clear() {this.cells = []; this.tools.clear(); this.jobs.clear(); this.processes.clear(); this.diagnostics.clear(); this.operations.clear(); this.reviewedDiffs.clear(); this.assistant = this.reasoning = undefined; this.plan = {items: []}; this.progress = {};}
+  clear() {this.cells = []; this.streaming.clear(); this.dirtyIndex = 0; this.contentRevision++; this.tools.clear(); this.jobs.clear(); this.processes.clear(); this.diagnostics.clear(); this.operations.clear(); this.reviewedDiffs.clear(); this.assistant = this.reasoning = undefined; this.plan = {items: []}; this.progress = {};}
+  takeDirtyIndex() {const index = this.dirtyIndex; this.dirtyIndex = Infinity; return index;}
   update(state: RuntimeState) {
     if (state.session_generation > this.generation) {this.clear(); this.generation = state.session_generation;}
-    if (!state.running) for (const cell of this.cells) this.finishCell(cell);
+    if (!state.running) for (const cell of this.streaming) this.finishCell(cell);
     this.state = state; this.emit('change');
   }
   initialize(info: any) {
@@ -95,11 +104,11 @@ export class SessionStore extends EventEmitter {
         if (p.reasoning) {this.appendReasoning(p); break;}
         this.finishCell(this.reasoning); this.reasoning = undefined;
         this.assistant ??= this.add('assistant', 'Reuleaux', '', '', true);
-        this.assistant.body += p.text; this.assistant.revision++; break;
+        this.assistant.body += p.text; this.touch(this.assistant); break;
       case 'ReasoningDelta': this.appendReasoning(p); break;
       case 'TurnFinished': case 'ChatCompleted':
         if (!this.assistant && p.render_response && p.response) this.assistant = this.add('assistant', 'Reuleaux', p.response);
-        for (const cell of this.cells) this.finishCell(cell);
+        for (const cell of this.streaming) this.finishCell(cell);
         this.assistant = this.reasoning = undefined; break;
       case 'AssistantStreamInterrupted':
         this.finishCell(this.assistant); this.finishCell(this.reasoning); this.reasoning = undefined;
@@ -113,7 +122,7 @@ export class SessionStore extends EventEmitter {
       }
       case 'ToolOutputDelta': {
         const cell = this.tools.get(p.tool_call_id);
-        if (cell) {cell.body = (cell.body === 'Running…' ? '' : cell.body) + p.text; cell.revision++;}
+        if (cell) {cell.body = (cell.body === 'Running…' ? '' : cell.body) + p.text; this.touch(cell);}
         else this.add('tool', p.tool_call_id, p.text);
         break;
       }
@@ -125,7 +134,9 @@ export class SessionStore extends EventEmitter {
         const detail = [cell.details, fields(out)].filter(Boolean).join('\n\n');
         cell.title = `${p.tool_name} · ${out.status}`;
         cell.body = body + (out.diff ? this.reviewedDiffs.has(out.diff.unified) ? '\nReviewed diff applied.' : '\n' + diff(out.diff.unified) : '');
-        cell.details = detail; cell.streaming = false; cell.revision++;
+        cell.details = detail; cell.streaming = false; this.touch(cell);
+        this.streaming.delete(cell); this.tools.delete(p.tool_call_id);
+        if (out.diff) this.reviewedDiffs.delete(out.diff.unified);
         cell.tone = out.status === 'succeeded' ? 'success' : 'warning';
         const snapshot = out.metadata?.process_snapshot;
         if (p.tool_name === 'shell' && snapshot && snapshot.state !== 'exited') {
@@ -156,7 +167,7 @@ export class SessionStore extends EventEmitter {
   private appendReasoning(p: RecordData) {
     this.finishCell(this.assistant); this.assistant = undefined;
     this.reasoning ??= this.add('reasoning', 'Thinking', '', '', true);
-    this.reasoning.body += p.text; this.reasoning.revision++;
+    this.reasoning.body += p.text; this.touch(this.reasoning);
     this.reasoning.tone = p.display_mode === 'inline' ? 'inline' : 'collapsed';
   }
   private processCompleted(process: ProcessView) {
@@ -168,6 +179,7 @@ export class SessionStore extends EventEmitter {
     cell.tone = success ? 'success' : 'warning';
   }
   private finishCell(cell: Cell | undefined) {
-    if (cell?.streaming) {cell.streaming = false; cell.revision++;}
+    if (cell?.streaming) {cell.streaming = false; this.streaming.delete(cell); this.touch(cell);}
   }
+  private touch(cell: Cell) {cell.revision++; this.contentRevision++; this.dirtyIndex = Math.min(this.dirtyIndex, this.cellIndices.get(cell)!);}
 }

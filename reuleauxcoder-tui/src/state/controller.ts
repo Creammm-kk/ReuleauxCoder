@@ -6,13 +6,16 @@ import {SessionStore} from './session.js';
 import {edit, editor, type Editor} from './editor.js';
 import {actionLabel, defaults, fieldValue, humanize, menusFromCatalog, type Menu} from './menus.js';
 import {InputHistory} from './history.js';
+import {HistoryBrowser} from './history-browser.js';
+import type {HistoryOperation} from '../protocol/history.js';
 import {fields} from '../ui/format.js';
 
 export interface Item {label: string; description: string; current?: boolean; select(): void | Promise<void>}
 export interface ListScreen {kind: 'list'; title: string; items: Item[]; index: number; filter: Editor; menu?: Menu; panel?: Panel}
 export interface DocumentScreen {kind: 'document'; title: string; body: string; offset: number; menu?: Menu}
 export interface FormScreen {kind: 'form'; title: string; action: Action; values: {[key: string]: Json}; index: number; input: Editor; error: string}
-export type Screen = ListScreen | DocumentScreen | FormScreen;
+export interface HistoryScreen {kind: 'history'; title: string; browser: HistoryBrowser; menu?: never}
+export type Screen = ListScreen | DocumentScreen | FormScreen | HistoryScreen;
 
 export class TuiController extends EventEmitter {
   readonly session = new SessionStore();
@@ -108,6 +111,12 @@ export class TuiController extends EventEmitter {
     this.changed();
   }
   document(title: string, body: string, menu?: Menu) {this.screens.push({kind: 'document', title, body, offset: 0, menu}); this.changed();}
+  showHistory(operation: HistoryOperation = 'read', parameters?: Record<string, any>) {
+    if (this.screen?.kind === 'history') this.screen.browser.dispose();
+    const browser = new HistoryBrowser(this.client, this.changed, operation, parameters);
+    this.screens.push({kind: 'history', title: 'Session history', browser});
+    void browser.load(); this.changed();
+  }
   private list(title: string, items: Item[], menu?: Menu, panel?: Panel): ListScreen {return {kind: 'list', title, items, index: Math.max(0, items.findIndex(item => item.current)), filter: editor(), menu, panel};}
   private actionItems(menu: Menu): Item[] {return menu.actions.map(action => ({label: actionLabel(action), description: action.description.match(/^(?:\[[^\]]+\]\s*)+/)?.[0] ?? '', select: () => this.chooseAction(action)}));}
   async openMenu(menu: Menu) {
@@ -219,14 +228,46 @@ export class TuiController extends EventEmitter {
   paste(text: string) {
     if (this.active && (this.active.kind === 'input_text' || this.interactionMode === 'feedback')) this.interactionInput = edit(this.interactionInput, text, {});
     else if (this.screen?.kind === 'form') this.screen.input = edit(this.screen.input, text, {});
+    else if (this.screen?.kind === 'history' && this.screen.browser.search) this.screen.browser.search = edit(this.screen.browser.search, text, {});
     else if (!this.active && !this.screen) {this.composer = edit(this.composer, text, {}); this.paletteDismissed = false;}
     this.changed();
   }
   async key(input: string, key: Partial<Key> = {}) {
     if (this.closing) return;
+    if (!this.active && this.screen?.kind === 'history' && !(key.ctrl && ['c', 'd', 'o', 'r', 'g'].includes(input))) {
+      const browser = this.screen.browser;
+      if (key.escape) {
+        if (browser.search) browser.search = null;
+        else {browser.dispose(); this.screens.pop();}
+      } else if (browser.search) {
+        if (key.return) {
+          const pattern = browser.search.text.trim();
+          browser.search = null;
+          if (pattern) this.showHistory('search', {pattern});
+        } else browser.search = edit(browser.search, input, key);
+      } else if (input === '/') browser.beginSearch();
+      else if (input === 'n' || key.rightArrow) void browser.next();
+      else if (input === 'p' || key.leftArrow) void browser.previous();
+      else if (input === 'r') void browser.load();
+      else if (input === 'm' && !browser.detailed) this.showHistory('read', {reverse: true, messages_only: browser.parameters.messages_only === false});
+      else if (key.return && browser.current && !browser.detailed) this.showHistory('read', {event_id: browser.current.event_id});
+      else if (input === 'a' && browser.current?.artifact_refs.length) {
+        this.screens.push(this.list('History artifacts', browser.current.artifact_refs.map(artifact_ref => ({label: artifact_ref, description: 'Read archived content', select: () => this.showHistory('artifact', {artifact_ref, session_id: browser.page!.session_id})}))));
+      } else if (key.upArrow || key.downArrow) {
+        if (browser.detailed) browser.offset = Math.max(0, browser.offset + (key.upArrow ? -1 : 1));
+        else browser.index = Math.max(0, Math.min((browser.page?.records.length ?? 1) - 1, browser.index + (key.upArrow ? -1 : 1)));
+      } else if (key.pageUp || key.pageDown) {
+        const delta = (key.pageUp ? -1 : 1) * this.viewportRows;
+        if (browser.detailed) browser.offset = Math.max(0, browser.offset + delta);
+        else browser.index = Math.max(0, Math.min((browser.page?.records.length ?? 1) - 1, browser.index + Math.trunc(delta / 2)));
+      }
+      else if (key.home) browser.offset = 0;
+      else if (key.end) browser.offset = Number.MAX_SAFE_INTEGER;
+      this.changed(); return;
+    }
     if (key.ctrl && input === 'c') {
       if (this.active) this.answer(cancellation(this.active.kind));
-      else if (this.screen) {this.screens = []; this.viewEpoch++;}
+      else if (this.screen) {for (const screen of this.screens) if (screen.kind === 'history') screen.browser.dispose(); this.screens = []; this.viewEpoch++;}
       else if (this.composer.text) {this.composer = editor(); this.exitConfirm = false;}
       else if (this.session.state.stopping) await this.finish();
       else if (this.session.state.running && !this.session.fatal) {
@@ -257,6 +298,7 @@ export class TuiController extends EventEmitter {
     }
     if (this.screen) {
       const screen = this.screen;
+      if (screen.kind === 'document' && screen.title === 'Session details' && input === 'h' && this.client.info.history_query) {this.showHistory(); return;}
       if (screen.kind === 'list') {
         const items = this.listItems(screen);
         if (key.upArrow || key.downArrow) screen.index = items.length ? (screen.index + (key.upArrow ? -1 : 1) + items.length) % items.length : 0;
@@ -267,7 +309,8 @@ export class TuiController extends EventEmitter {
         else if (key.upArrow || key.downArrow) screen.offset = Math.max(0, screen.offset + (key.upArrow ? -1 : 1));
         else if (key.home) screen.offset = 0;
         else if (key.end) screen.offset = Number.MAX_SAFE_INTEGER;
-      } else if (key.return && !key.shift && !key.meta) await this.submitForm(screen);
+      } else if (screen.kind === 'history') return;
+      else if (key.return && !key.shift && !key.meta) await this.submitForm(screen);
       else if (key.upArrow && screen.index > 0) {screen.index--; screen.input = editor(String(screen.values[screen.action.parameters[screen.index].name] ?? ''));}
       else if ((key.tab || key.leftArrow || key.rightArrow || input === ' ') && screen.action.parameters[screen.index].kind === 'boolean') {
         const choices = screen.action.parameters[screen.index].nullable ? ['auto', 'true', 'false'] : ['true', 'false'];

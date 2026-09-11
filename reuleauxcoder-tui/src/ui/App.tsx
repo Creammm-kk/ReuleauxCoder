@@ -62,13 +62,14 @@ export function App({controller: c, alternateScreen = false}: {controller: TuiCo
   const bodyHeight = bodyBudget - queue.length;
   const available = contentHeight - queue.length;
   const listLength = c.screen?.kind === 'list' ? c.listItems(c.screen).length : c.palette.length;
-  const desiredPanelHeight = c.active || c.screen?.kind === 'document' || c.screen?.kind === 'form' ? 18 : Math.min(18, listLength * (panelWidth >= 45 ? 2 : 1) + (c.screen ? 1 : 0));
+  const desiredPanelHeight = c.screen?.kind === 'history' ? available : c.active || c.screen?.kind === 'document' || c.screen?.kind === 'form' ? 18 : Math.min(18, listLength * (panelWidth >= 45 ? 2 : 1) + (c.screen ? 1 : 0));
   const panelCapacity = hasPanel ? Math.max(1, Math.min(desiredPanelHeight, available - (c.active ? 1 : 4) - panelHintBudget)) : 0;
   const panel = hasPanel ? panelRows(c, panelWidth, panelCapacity) : null;
   const panelHeight = panel ? Math.max(1, Math.min(panelCapacity, panel.rows.length)) : 0;
   const panelHints = panel ? hintRows(panel.hint, panelWidth).slice(0, panelHintBudget) : [];
   const transcriptHeight = Math.max(0, available - (panel ? panelHeight + 1 + panelHints.length : 0));
-  const transcript = layout.render(c.session.cells, width, transcriptHeight, c.offset, c.expanded);
+  const transcript = useMemo(() => layout.render(c.session.cells, width, transcriptHeight, c.offset, c.expanded, c.session.takeDirtyIndex()),
+    [layout, c.session.contentRevision, width, transcriptHeight, c.offset, c.expanded]);
   c.viewportRows = Math.max(1, panel ? panelHeight : transcriptHeight); c.totalRows = transcript.total;
   if (c.offset !== null) c.offset = transcriptHeight > 0 && transcript.start + transcriptHeight >= transcript.total ? null : transcript.start;
   const state = c.session.state;
@@ -77,7 +78,7 @@ export function App({controller: c, alternateScreen = false}: {controller: TuiCo
     ? [keyHint('Esc', 'back'), keyHint('PgUp/PgDn', 'scroll'), keyHint('F2', 'details')]
     : [...(!dimensions.sidebar && backgroundCount ? [keyHint('/ps', `${backgroundCount} processes`)] : []), keyHint('F4', c.expanded ? 'collapse output + reasoning' : 'tool output + reasoning'), keyHint('F2', 'session'), keyHint('/', 'commands'), ...(dimensions.width >= 100 ? [keyHint('Ctrl+C', state.running ? 'interrupt' : 'exit')] : [])]
   ).join('   ');
-  const footer = c.exitConfirm ? paint.warning('Press Ctrl+C again to save and exit.') : c.session.fatal ? paint.error(safe(c.session.fatal)) : c.status ? paint.muted(safe(c.status)) : c.offset !== null ? paint.muted(`History ${transcript.start + 1}/${transcript.total} · End follows output`) : shortcutHints;
+  const footer = c.exitConfirm ? paint.warning('Press Ctrl+C again to save and exit.') : c.session.fatal ? paint.error(safe(c.session.fatal)) : c.status ? paint.muted(safe(c.status)) : c.offset !== null ? paint.muted(`History ${transcript.start + 1}/${transcript.estimated ? '~' : ''}${transcript.total} · End follows output`) : shortcutHints;
   const focused = !c.active && !c.screen;
   const inputColor = focused ? paint.accent : paint.muted;
   const panelColor = c.active ? paint.warning : paint.accent;
