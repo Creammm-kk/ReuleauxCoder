@@ -1,4 +1,4 @@
-import React, {useEffect, useMemo, useSyncExternalStore} from 'react';
+import React, {useEffect, useMemo, useState, useSyncExternalStore} from 'react';
 import {Box, Text, useApp, useInput, usePaste, useStdout} from 'ink';
 import type {TuiController} from '../state/controller.js';
 import {safe} from './format.js';
@@ -13,6 +13,17 @@ import {consoleChrome, useLogoCollapse} from './chrome.js';
 
 function Rows({rows, height, width}: {rows: string[]; height: number; width: number}) {
   return <Box flexDirection="column" height={height} flexShrink={0}>{Array.from({length: height}, (_, index) => <Text key={index} wrap="truncate">{paint.surface(fit(rows[index] || '', width))}</Text>)}</Box>;
+}
+
+function ProcessSidebar({controller, width, height}: {controller: TuiController; width: number; height: number}) {
+  const [now, setNow] = useState(Date.now);
+  const running = [...controller.session.processes.values()].some(process => process.state === 'running');
+  useEffect(() => {
+    if (!running) return;
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [running]);
+  return <Rows rows={sidebarRows(controller, width, height, now)} height={height} width={width}/>;
 }
 
 export function App({controller: c, alternateScreen = false}: {controller: TuiController; alternateScreen?: boolean}) {
@@ -59,9 +70,10 @@ export function App({controller: c, alternateScreen = false}: {controller: TuiCo
   c.viewportRows = Math.max(1, panel ? panelHeight : transcriptHeight); c.totalRows = transcript.total;
   if (c.offset !== null) c.offset = transcriptHeight > 0 && transcript.start + transcriptHeight >= transcript.total ? null : transcript.start;
   const state = c.session.state;
+  const backgroundCount = [...c.session.processes.values()].filter(process => process.state !== 'exited').length;
   const shortcutHints = (panel
     ? [keyHint('Esc', 'back'), keyHint('PgUp/PgDn', 'scroll'), keyHint('F2', 'details')]
-    : [keyHint('F4', c.expanded ? 'collapse output + reasoning' : 'tool output + reasoning'), keyHint('F2', 'session'), keyHint('/', 'commands'), ...(dimensions.width >= 100 ? [keyHint('Ctrl+C', state.running ? 'interrupt' : 'exit')] : [])]
+    : [...(!dimensions.sidebar && backgroundCount ? [keyHint('/ps', `${backgroundCount} processes`)] : []), keyHint('F4', c.expanded ? 'collapse output + reasoning' : 'tool output + reasoning'), keyHint('F2', 'session'), keyHint('/', 'commands'), ...(dimensions.width >= 100 ? [keyHint('Ctrl+C', state.running ? 'interrupt' : 'exit')] : [])]
   ).join('   ');
   const footer = c.exitConfirm ? paint.warning('Press Ctrl+C again to save and exit.') : c.session.fatal ? paint.error(safe(c.session.fatal)) : c.status ? paint.muted(safe(c.status)) : c.offset !== null ? paint.muted(`History ${transcript.start + 1}/${transcript.total} · End follows output`) : shortcutHints;
   const focused = !c.active && !c.screen;
@@ -92,7 +104,7 @@ export function App({controller: c, alternateScreen = false}: {controller: TuiCo
       </Box>
       {dimensions.sidebar > 0 && <>
         <Rows rows={Array.from({length: bodyHeight}, () => paint.border(' │ '))} height={bodyHeight} width={3}/>
-        <Rows rows={sidebarRows(c, dimensions.sidebar, bodyHeight)} height={bodyHeight} width={dimensions.sidebar}/>
+        <ProcessSidebar controller={c} height={bodyHeight} width={dimensions.sidebar}/>
       </>}
     </Box>
     {queue.length > 0 && <Rows rows={queue} height={queue.length} width={dimensions.width}/>}

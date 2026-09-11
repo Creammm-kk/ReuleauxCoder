@@ -2,6 +2,7 @@ import type {TuiController} from '../state/controller.js';
 import {activityFor} from './activity.js';
 import {safe} from './format.js';
 import {fit, keyHint, paint, section} from './theme.js';
+import {duration, processElapsed} from '../state/processes.js';
 
 export function workbenchLayout(columns: number, rows: number) {
   const width = Math.max(8, columns - 2);
@@ -15,7 +16,7 @@ const valueRow = (label: string, value: string, color = paint.info) => paint.mut
 interface Block {title: string; summary: string[]; details: string[]; color: (text: string) => string; detailPriority: number; caption?: string}
 
 /** Allocate summaries by importance, then spend spare rows on details. F2 keeps all facts. */
-export function sidebarRows(c: TuiController, width: number, height: number): string[] {
+export function sidebarRows(c: TuiController, width: number, height: number, now = Date.now()): string[] {
   const {state, plan, jobs, processes, git} = c.session;
   const blocks: Block[] = [];
   const add = (title: string, summary: string[], details: string[], color = paint.secondary, detailPriority = 9, caption = '') => {
@@ -39,6 +40,22 @@ export function sidebarRows(c: TuiController, width: number, height: number): st
     ? paint.badge(fit(`[${String(index + 1).padStart(2, '0')}] ${compact(item.step)}`, width - 2))
     : (item.status === 'completed' ? paint.success : paint.muted)(`${item.status === 'completed' ? '[✓]' : '[ ]'} ${compact(item.step)}`);
   if (items.length) add('PLAN', [focus >= 0 ? planRow(items[focus], focus) : paint.success('✓ Plan completed')], items.map(planRow).filter((_: string, index: number) => index !== focus), paint.accent, 7, `${items.filter((item: any) => item.status === 'completed').length}/${items.length}`);
+
+  const liveProcesses = [...processes.values()].filter(process => process.state !== 'exited');
+  if (liveProcesses.length) {
+    const visibleProcesses = liveProcesses.slice(0, 3);
+    const rows = visibleProcesses.flatMap(process => {
+      const color = process.state === 'unknown' ? paint.warning : paint.secondary;
+      const elapsed = duration(processElapsed(process, now));
+      const output = [
+        ...process.outputTail.stdout.split('\n').filter(line => line.trim()).slice(-2).map(line => paint.muted('  ▏ ') + paint.info(compact(line))),
+        ...process.outputTail.stderr.split('\n').filter(line => line.trim()).slice(-1).map(line => paint.muted('  ▏ ') + paint.warning(compact(line))),
+      ];
+      return [color(`● ${process.state} · ${elapsed}${process.runtime_timeout_seconds ? ' / ' + duration(process.runtime_timeout_seconds) : ''}`), paint.info(compact(process.command)), ...output, ...(process.output_truncated ? [paint.warning('  Output truncated · /ps')] : [])];
+    });
+    if (liveProcesses.length > visibleProcesses.length) rows.push(paint.muted(`and ${liveProcesses.length - visibleProcesses.length} more · /ps`));
+    add('PROCESSES', [paint.secondary(`${liveProcesses.length} active · /ps manage`), ...rows.slice(0, 2)], rows.slice(2), paint.secondary, 2);
+  }
 
   if (git?.available) {
     const count = `${git.truncated ? '≥' : ''}${git.files.length}`;
@@ -71,9 +88,8 @@ export function sidebarRows(c: TuiController, width: number, height: number): st
 
   const activities = [
     ...[...jobs.values()].filter(job => !['completed', 'cancelled', 'stale'].includes(job.status)).map(job => ({title: job.task, status: job.status, detail: job.blocker || job.error || job.current_tool || job.activity || ''})),
-    ...[...processes.values()].filter(process => process.state !== 'exited').map(process => ({title: process.command, status: process.state, detail: ''})),
   ];
-  add('ACTIVITY', activities.length ? [paint.secondary(`${activities.length} agents / processes`)] : [], activities.flatMap(item => [paint.secondary('● ') + paint.info(compact(item.title)) + paint.muted(` · ${item.status}`), ...(item.detail ? [paint.muted('  ' + compact(item.detail))] : [])]), paint.secondary, 5);
+  add('ACTIVITY', activities.length ? [paint.secondary(`${activities.length} agents`)] : [], activities.flatMap(item => [paint.secondary('● ') + paint.info(compact(item.title)) + paint.muted(` · ${item.status}`), ...(item.detail ? [paint.muted('  ' + compact(item.detail))] : [])]), paint.secondary, 5);
 
   let spare = Math.max(0, height - 2);
   const visible: {block: Block; details: string[]}[] = [];

@@ -98,6 +98,8 @@ Product tools in `extensions/tools/builtin/` compose those primitives. The Go pe
 
 Output retention is tool-directed through `ToolRetentionHint`: read uses head/anchor semantics, shell uses tail semantics, and search/list tools may use head-tail. Timeout/cancel outcomes keep partial output; the CLI shows a rolling five-line live tail while the agent retains the full result subject to context policy.
 
+Managed shell processes are published before the initial wait, so interrupting a turn or a poll leaves started processes available through `/ps` and `shell_session`. The initial yield defaults to five seconds; runtime timeout defaults to zero (no deadline), with positive values retaining process-tree termination. Legacy remote peers require an explicit positive timeout. Shutdown still cleans up session-owned processes. The TUI keeps bounded per-stream output tails, displays active processes and elapsed time in a height-budgeted sidebar, and folds consecutive polls into one waiting surface; expanded output preserves individual calls.
+
 ## CLI and presentation
 
 The independent React TUI lives in `reuleauxcoder-tui/`. Its protocol client owns framing and reverse interactions; state reducers retain complete content and drafts; React renders cached visible rows. The frontend derives menu groups and primitive form fields from the backend catalog, and consumes command-owned panel trees. Slash input selects a top-level menu. F2 exposes session/plan/job/startup facts; F4 expands reasoning and full structured tool output. The launcher owns a stdio backend process, with `--backend` supporting an SSH subprocess. See its README for parity, controls and verification.

@@ -3,6 +3,7 @@ import {Box, Text} from 'ink';
 import type {TuiController} from '../state/controller.js';
 import {safe} from './format.js';
 import {between, fit, paint, rail} from './theme.js';
+import {isProcessPoll} from './tool-groups.js';
 
 export function activityFor(c: TuiController) {
   if (c.session.fatal) return null;
@@ -13,6 +14,10 @@ export function activityFor(c: TuiController) {
   if (!c.session.state.running) return null;
   const cell = c.session.cells.findLast(cell => cell.streaming && cell.kind === 'tool')
     ?? c.session.cells.findLast(cell => cell.streaming);
+  if (cell && isProcessPoll(cell)) {
+    const id = cell.tool!.arguments.session_id;
+    return {label: `Waiting · ${safe(c.session.processes.get(id)?.command || id)}`, moving: true};
+  }
   const label = cell?.kind === 'tool' ? `Running ${safe(cell.title)}…`
     : cell?.kind === 'reasoning' ? 'Thinking…'
     : cell?.kind === 'assistant' ? 'Responding…' : 'Waiting for model…';

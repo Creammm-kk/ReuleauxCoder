@@ -2,6 +2,7 @@ import {EventEmitter} from 'node:events';
 import type {GitWorkspace} from '../protocol/wire.js';
 import {emptyState, typeOf, type Json, type RecordData, type RuntimeState, type UIEvent, type View} from '../protocol/wire.js';
 import {diff, fields} from '../ui/format.js';
+import {updateProcess, type ProcessView} from './processes.js';
 
 export interface Cell {id: string; kind: 'user' | 'assistant' | 'reasoning' | 'tool' | 'notice'; title: string; body: string; details: string; revision: number; streaming: boolean; tone?: string; tool?: {name: string; arguments: RecordData; outcome?: RecordData}}
 export class SessionStore extends EventEmitter {
@@ -10,7 +11,7 @@ export class SessionStore extends EventEmitter {
   plan: RecordData = {items: []};
   progress: RecordData = {};
   jobs = new Map<string, RecordData>();
-  processes = new Map<string, RecordData>();
+  processes = new Map<string, ProcessView>();
   diagnostics = new Map<string, RecordData>();
   operations = new Map<string, RecordData>();
   startup: UIEvent[] = [];
@@ -125,10 +126,21 @@ export class SessionStore extends EventEmitter {
         cell.title = `${p.tool_name} · ${out.status}`;
         cell.body = body + (out.diff ? this.reviewedDiffs.has(out.diff.unified) ? '\nReviewed diff applied.' : '\n' + diff(out.diff.unified) : '');
         cell.details = detail; cell.streaming = false; cell.revision++;
-        cell.tone = out.status === 'succeeded' ? 'success' : 'warning'; break;
+        cell.tone = out.status === 'succeeded' ? 'success' : 'warning';
+        const snapshot = out.metadata?.process_snapshot;
+        if (p.tool_name === 'shell' && snapshot && snapshot.state !== 'exited') {
+          const process = this.processes.get(snapshot.session_id);
+          if (process) {process.background = true; this.processCompleted(process);}
+        }
+        break;
       }
       case 'SubagentJobChanged': this.jobs.set(p.job_id, p); break;
-      case 'ProcessSessionChanged': this.processes.set(p.process_session_id, p); break;
+      case 'ProcessSessionChanged': {
+        const process = updateProcess(this.processes.get(p.process_session_id), p);
+        this.processes.set(p.process_session_id, process);
+        this.processCompleted(process);
+        break;
+      }
       case 'DiagnosticsPublished': this.diagnostics.set(p.file_path, p); this.add('notice', 'Diagnostics · ' + p.file_path, fields(p.diagnostics)); break;
       case 'DiagnosticsCleared': this.diagnostics.delete(p.file_path); break;
       case 'PlanUpdated': this.plan = p; break;
@@ -146,6 +158,14 @@ export class SessionStore extends EventEmitter {
     this.reasoning ??= this.add('reasoning', 'Thinking', '', '', true);
     this.reasoning.body += p.text; this.reasoning.revision++;
     this.reasoning.tone = p.display_mode === 'inline' ? 'inline' : 'collapsed';
+  }
+  private processCompleted(process: ProcessView) {
+    if (process.state !== 'exited' || !process.background || process.notified) return;
+    process.notified = true;
+    const success = process.exit_code === 0 && process.termination_reason === 'exit';
+    const cell = this.add('notice', success ? 'Background process completed' : 'Background process stopped',
+      `${process.command}\n${process.process_session_id} · ${process.termination_reason ?? 'exit'}${process.exit_code == null ? '' : ` · exit ${process.exit_code}`}`);
+    cell.tone = success ? 'success' : 'warning';
   }
   private finishCell(cell: Cell | undefined) {
     if (cell?.streaming) {cell.streaming = false; cell.revision++;}

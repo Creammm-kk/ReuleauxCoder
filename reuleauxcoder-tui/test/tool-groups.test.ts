@@ -18,6 +18,24 @@ function transcript() {
   };
 }
 
+test('consecutive process polls share one waiting surface while F4 keeps all results', () => {
+  const t = transcript();
+  for (let i = 0; i < 3; i++) {
+    t.start(`poll-${i}`, 'shell_session', {session_id: 'proc_test', action: 'poll'});
+    assert(!t.text().includes('Waited for'), 'the active poll lives in the activity line');
+    t.finish(`poll-${i}`, 'shell_session', {status: 'succeeded', summary: 'Process running', stdout: `batch-${i}`});
+  }
+  assert.equal((t.text().match(/Waited for process/g) ?? []).length, 1);
+  assert(t.text().includes('3 checks'));
+  for (let i = 0; i < 3; i++) assert(t.text(true).includes(`batch-${i}`));
+  t.start('write', 'shell_session', {session_id: 'proc_test', action: 'write', chars: 'hello'});
+  t.finish('write', 'shell_session', {status: 'failed', summary: 'stdin is closed'});
+  assert(t.text().includes('stdin is closed'));
+  t.start('later', 'shell_session', {session_id: 'proc_test', action: 'poll'});
+  t.finish('later', 'shell_session', {status: 'succeeded', summary: 'Process running'});
+  assert.equal((t.text().match(/Waited for process/g) ?? []).length, 2, 'writes split poll streaks');
+});
+
 test('tool groups keep summaries and failures while F4 restores every original record', () => {
   const t = transcript();
   t.start('read-1', 'read_file', {file_path: 'old.txt'});

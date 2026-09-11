@@ -2,13 +2,16 @@ import type {Cell} from '../state/session.js';
 import {safe, wrap} from './format.js';
 import {fit, paint} from './theme.js';
 
+export const isProcessPoll = (cell: Cell) => cell.tool?.name === 'shell_session' && cell.tool.arguments.action === 'poll';
+
 /** Folding is a projection: original records and their ordering stay intact. */
 export function transcriptGroups(cells: Cell[], expanded: boolean): Cell[][] {
   const groups: Cell[][] = [];
   for (const cell of cells) {
     if (!expanded && cell.kind === 'reasoning' && cell.tone !== 'inline') continue;
     const previous = groups.at(-1);
-    if (!expanded && cell.kind === 'tool' && previous?.[0].kind === 'tool') previous.push(cell);
+    const samePoll = previous && isProcessPoll(cell) && isProcessPoll(previous[0]) && cell.tool!.arguments.session_id === previous[0].tool!.arguments.session_id;
+    if (!expanded && cell.kind === 'tool' && previous?.[0].kind === 'tool' && (samePoll || !isProcessPoll(cell) && !isProcessPoll(previous[0]))) previous.push(cell);
     else groups.push([cell]);
   }
   return groups;
@@ -29,6 +32,7 @@ function summary(cell: Cell): string {
   }
   if (out) {
     const text = out.summary || out.stderr || out.content || `${name} · ${out.status}`;
+    if (!failed(cell) && out.metadata?.process_snapshot?.state === 'running') return paint.secondary(singleLine(`● ${text}`));
     return failed(cell) ? paint.warning(singleLine(`✗ ${name} · ${out.status} · ${text}`)) : paint.success(singleLine(`✓ ${text}`));
   }
   const color = failed(cell) ? paint.warning : paint.muted;
@@ -36,6 +40,12 @@ function summary(cell: Cell): string {
 }
 
 export function toolGroupRows(cells: Cell[], width: number): string[] {
+  if (cells.every(isProcessPoll)) {
+    const latest = cells.at(-1)!;
+    const errors = cells.filter(failed).map(cell => '  ' + summary(cell));
+    if (latest.streaming) return errors;
+    return [...errors, paint.muted(`  ↳ Waited for process ${latest.tool!.arguments.session_id}${cells.length > 1 ? ` · ${cells.length} checks` : ''}`), ''];
+  }
   const rows: string[] = [];
   if (cells.length > 1) {
     const running = cells.filter(cell => cell.streaming).length;
