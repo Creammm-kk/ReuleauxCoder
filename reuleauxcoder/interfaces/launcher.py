@@ -117,12 +117,31 @@ def _unavailable(reason: str, *, explicit_tui: bool):
             file=sys.stderr,
         )
         return 1
-    print(
-        f"rcoder: TUI unavailable: {reason}; falling back to CLI.\n"
-        "For TUI, install or update Node.js on PATH, then run rcoder-tui; no npm install is needed.\n"
-        "Use rcoder-cli to select CLI explicitly and skip this notice.",
-        file=sys.stderr,
+    from rich.console import Console
+    from rich.text import Text
+
+    from reuleauxcoder.interfaces.cli.theme import DEFAULT_CLI_THEME
+    from reuleauxcoder.presentation.semantics import DisplayTone
+
+    theme = DEFAULT_CLI_THEME
+    message = Text.assemble(
+        (
+            f"rcoder: TUI unavailable: {reason}; falling back to CLI.\n",
+            theme.style(DisplayTone.WARNING),
+        ),
+        (
+            "Install or update Node.js on PATH to enable TUI",
+            theme.style(DisplayTone.ACCENT),
+        ),
+        ", then run ",
+        ("rcoder-tui", theme.style(DisplayTone.ACCENT)),
+        "; no npm install is needed.\n",
+        (
+            "Use rcoder-cli to select CLI explicitly and skip this notice.",
+            theme.style(DisplayTone.MUTED),
+        ),
     )
+    Console(stderr=True).print(message, soft_wrap=True)
     return _cli()
 
 
