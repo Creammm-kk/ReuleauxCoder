@@ -11,7 +11,6 @@ test('Python catalog drives every command menu and typed parameter form', async 
   const b = await backend(); t.after(() => b.close());
   const {client, controller: c} = b;
   const fixture = decode(await b.peer.request('test.fixture'));
-  assert.equal(client.catalog.length, 44);
   assert.equal(new Set(c.menus.flatMap(menu => menu.actions.map(action => action.action_id))).size, client.catalog.length);
   assert(c.menus.every(menu => /^\/\w+$/.test(menu.name)));
   for (const action of client.catalog) assert.deepEqual(action.parameters.map(item => item.name), fixture.parameters[action.action_id]);

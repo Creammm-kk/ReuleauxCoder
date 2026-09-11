@@ -14,6 +14,7 @@ from reuleauxcoder.interfaces.view_registry import ViewRendererSpec
 from reuleauxcoder.app.commands.approval_views import ApprovalView
 from reuleauxcoder.extensions.skills.models import SkillsViewModel
 from reuleauxcoder.app.commands.view_models import (
+    GoalViewModel,
     HelpViewModel,
     ModelListViewModel,
     ModesViewModel,
@@ -34,6 +35,38 @@ from reuleauxcoder.presentation.semantics import DisplayTone
 def _view_model(event):
     payload = event.payload
     return payload.view_model if isinstance(payload, ViewEventPayload) else None
+
+
+def render_goal_view(renderer, event) -> bool:
+    model = _view_model(event)
+    if not isinstance(model, GoalViewModel):
+        return False
+    if event.payload.action == "refresh":
+        return True
+    stop_stream_and_clear(renderer)
+    render_heading(renderer, "GOAL")
+    goal = model.goal
+    if goal:
+        renderer.console.print(
+            Text(goal.objective, style=renderer.theme.style(DisplayTone.ACCENT))
+        )
+        budget = f"{goal.token_budget:,}" if goal.token_budget else "No limit"
+        renderer.console.print(
+            Text(
+                f"{goal.status} · Tokens {goal.tokens_used:,} / {budget} · {int(goal.time_used_seconds)}s"
+            )
+        )
+        if goal.estimated_requests:
+            renderer.console.print(
+                f"{goal.estimated_requests} requests use estimated token counts."
+            )
+        renderer.console.print(
+            "/goal edit · /goal pause · /goal resume · /goal budget · /goal clear",
+            style=renderer.theme.style(DisplayTone.MUTED),
+        )
+    else:
+        renderer.console.print("No goal set. Use /goal create <objective>.")
+    return True
 
 
 def render_mcp_servers_view(renderer, event) -> bool:
@@ -535,6 +568,7 @@ def builtin_cli_view_specs() -> list[ViewRendererSpec]:
                 view_type="effective_config", render=render_effective_config_view
             ),
             ViewRendererSpec(view_type="help", render=render_help_view),
+            ViewRendererSpec(view_type="goal", render=render_goal_view),
             ViewRendererSpec(
                 view_type="model_profiles", render=render_model_profiles_view
             ),

@@ -66,7 +66,7 @@ class CommandService:
         self.interactions = interactions
         self.panels = panels
         self.exit_saved_session_id: str | None = None
-        self._pending: deque[tuple[ActionRequest, str]] = deque()
+        self._pending: deque[tuple[ActionRequest | str, str]] = deque()
         self._queue_lock = threading.Lock()
         self._execution_lock = threading.RLock()
 
@@ -81,7 +81,22 @@ class CommandService:
     @property
     def pending_commands(self) -> tuple[str, ...]:
         with self._queue_lock:
-            return tuple(label for _, label in self._pending)
+            return tuple(
+                label
+                for request, label in self._pending
+                if isinstance(request, ActionRequest)
+            )
+
+    @property
+    def pending_inputs(self) -> tuple[str, ...]:
+        with self._queue_lock:
+            return tuple(
+                request for request, _ in self._pending if isinstance(request, str)
+            )
+
+    def queue_input(self, text: str) -> None:
+        with self._queue_lock:
+            self._pending.append((text, text))
 
     def build_panel(self, payload: ViewEventPayload) -> PanelPresentation | None:
         if self.panels is None:
@@ -98,13 +113,14 @@ class CommandService:
         with self._queue_lock:
             self._pending.clear()
 
-    def next_pending(self) -> ActionRequest | None:
+    def next_pending(self) -> ActionRequest | str | None:
         with self._queue_lock:
             if not self._pending:
                 return None
             request, label = self._pending.popleft()
         self.ui_bus.info(
-            f"Applying queued command now: {label}", kind=UIEventKind.COMMAND
+            f"Applying queued {'prompt' if isinstance(request, str) else 'command'} now: {label}",
+            kind=UIEventKind.COMMAND,
         )
         return request
 

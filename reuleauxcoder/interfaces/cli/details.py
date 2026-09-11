@@ -69,6 +69,14 @@ def render_details(renderer, state, startup_events):
     )
     if view.progress_next:
         console.print(Text(f"Next: {view.progress_next}"))
+    if state.goal:
+        goal = state.goal
+        budget = f"{goal.token_budget:,}" if goal.token_budget else "No limit"
+        console.print(
+            Text(
+                f"Goal: {goal.objective}\n{goal.status} · Tokens {goal.tokens_used:,} / {budget} · {int(goal.time_used_seconds)}s"
+            )
+        )
     for item in view.plan:
         console.print(Text(f"[{item.status}] {item.step} · {item.active_form}"))
     for job in view.subagents:

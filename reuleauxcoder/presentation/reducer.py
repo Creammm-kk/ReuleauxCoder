@@ -109,6 +109,8 @@ class PresentationReducer:
             self._complete_active_assistant(event)
             identity = event.turn_id or event.event_id
             group_id = self._start_turn_group(event)
+            if not payload.user_input:
+                return ()
             return self._append(
                 UserCell(
                     id=(

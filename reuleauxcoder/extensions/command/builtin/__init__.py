@@ -10,6 +10,10 @@ from reuleauxcoder.app.commands.panels import (
     CommandPanelSpec,
 )
 from reuleauxcoder.app.commands.registry import ActionRegistry
+from reuleauxcoder.extensions.command.builtin.goal import (
+    command_panel_spec as goal_panel_spec,
+    register_actions as register_goal_actions,
+)
 from reuleauxcoder.extensions.command.builtin.approval import (
     command_panel_spec as approval_panel_spec,
     register_actions as register_approval_actions,
@@ -62,6 +66,7 @@ class _CommandFeature:
 
 
 _BUILTIN_COMMAND_FEATURES = (
+    _CommandFeature(register_goal_actions, goal_panel_spec()),
     _CommandFeature(register_approval_actions, approval_panel_spec()),
     _CommandFeature(register_mcp_actions, mcp_panel_spec()),
     _CommandFeature(register_mode_actions, mode_panel_spec()),

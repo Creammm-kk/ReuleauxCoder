@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import replace
+from dataclasses import dataclass, replace
 import logging
 from pathlib import Path
 import threading
@@ -12,6 +12,7 @@ from typing import get_type_hints
 from reuleauxcoder.app.commands.requests import ActionRequest, CommandResult
 from reuleauxcoder.app.commands.capabilities import UIProfile
 from reuleauxcoder.app.commands.service import CommandService
+from reuleauxcoder.app.commands.view_models import GoalViewModel
 from reuleauxcoder.app.rpc.codec import encode, decode
 from reuleauxcoder.app.rpc.models import RuntimeSnapshot, Submission
 from reuleauxcoder.app.runtime.approval import build_runtime_approval_provider
@@ -25,6 +26,12 @@ from reuleauxcoder.infrastructure.fs.paths import get_sessions_dir
 from reuleauxcoder.infrastructure.persistence.history_query import SessionHistory
 
 log = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class _GoalContinuation:
+    goal_id: str
+    generation: int
 
 
 class RemoteInteractor:
@@ -91,6 +98,7 @@ class RuntimeServer:
         self._running = False
         self._closing = False
         self._initialized = False
+        self._ready = False
         self._shutdown_lock = threading.Lock()
         self._shutdown_complete = False
         self._revision = 0
@@ -106,9 +114,12 @@ class RuntimeServer:
         )
         self.agent.add_event_handler(bridge.on_agent_event)
         self.bus.subscribe(self._event, replay_history=False)
+        self.agent.goal_controller.on_change = self._goal_changed
         peer.methods.update(
             {
                 "initialize": self.initialize,
+                "runtime.ready": self.ready,
+                "goal.get": lambda: encode(self.agent.goal_controller.state),
                 "runtime.submit": self.submit,
                 "runtime.interrupt": self.interrupt,
                 "runtime.resize": self.resize,
@@ -161,7 +172,8 @@ class RuntimeServer:
                 stopping=self._running and agent.stop_requested(),
                 interrupt_pending=agent.round_interrupt_pending(),
                 queued_commands=self.commands.pending_commands,
-                queued_steering=tuple(agent.pending_user_steering()),
+                queued_steering=tuple(agent.pending_user_steering())
+                + self.commands.pending_inputs,
                 model=agent.llm.model,
                 context_tokens=context.predict_request_tokens(agent.messages),
                 context_limit=context.request_input_limit,
@@ -173,6 +185,7 @@ class RuntimeServer:
                 approval_waiting=review.queue_status.waiting if review else 0,
                 mode=agent.active_mode,
                 approval_policy=self.config.approval.default_mode,
+                goal=agent.goal_controller.state,
             )
 
     def git_snapshot(self):
@@ -223,6 +236,7 @@ class RuntimeServer:
                     "version": 1,
                     "workspace_git": self.agent.git_monitor is not None,
                     "history_query": True,
+                    "goals": True,
                     "catalog": self.commands.catalog,
                     "state": self.snapshot(),
                     "history_file": self.config.history_file,
@@ -315,6 +329,9 @@ class RuntimeServer:
                 if isinstance(value, str) and not value.startswith("/"):
                     accepted = self.agent.submit_user_steering(value)
                     status = "steering" if accepted else "rejected"
+                    if not accepted and not self.agent.stop_requested():
+                        self.commands.queue_input(value)
+                        status = "queued"
                 else:
                     request = self.commands.prepare_during_turn(value)
                     status = "queued" if request is None else "running"
@@ -336,11 +353,68 @@ class RuntimeServer:
         self._workers.add(worker)
         worker.start()
 
+    def _goal_changed(self):
+        if self._initialized:
+            self._publish_state()
+            self.bus.refresh_view(
+                GoalViewModel(
+                    self.agent.goal_controller.state,
+                    self.config.goal_default_token_budget,
+                ),
+                title="Goal",
+                reuse_key="goal",
+            )
+
+    def ready(self):
+        with self._lock:
+            if not self._initialized:
+                raise RpcError(-32002, "Initialize first")
+            self._ready = True
+            self._wake_goal()
+            return encode(self._publish_state())
+
+    def _next_goal(self):
+        goal = self.agent.goal_controller.state
+        if (
+            not self._ready
+            or self._closing
+            or self.agent.stop_requested()
+            or goal is None
+            or goal.status != "active"
+            or self.agent.active_mode == "planner"
+            or not self.agent.is_tool_allowed_in_mode("update_goal")
+        ):
+            return None
+        return _GoalContinuation(goal.id, self.agent.session_generation)
+
+    def _wake_goal(self):
+        # Called under the admission lock, after all user/client work is drained.
+        if self._running or self._workers:
+            return
+        value = self._next_goal()
+        if value is not None:
+            self.agent.clear_stop_request()
+            self._running = True
+            self._spawn(value)
+
     def _run(self, value, concurrent):
         try:
             while value is not None:
                 try:
-                    result = self.commands.submit(value, during_turn=concurrent)
+                    continuation = isinstance(value, _GoalContinuation)
+                    if continuation:
+                        with self._lock:
+                            current = self._next_goal()
+                            allowed = (
+                                current == value and not self.agent.stop_requested()
+                            )
+                        if allowed:
+                            self.agent.chat(
+                                "", goal_continuation=True, clear_stop=False
+                            )
+                        result = CommandResult(session_id=self.commands.session_id)
+                    else:
+                        result = self.commands.submit(value, during_turn=concurrent)
                     if result.control == "chat":
                         self.agent.chat(self.commands.prepare_chat_input(value))
                         result = CommandResult(session_id=self.commands.session_id)
@@ -348,10 +422,23 @@ class RuntimeServer:
                     if result.control == "exit":
                         with self._lock:
                             self._closing = True
+                    if (
+                        not concurrent
+                        and not self._closing
+                        and self.agent.stop_requested()
+                    ):
+                        self.agent.goal_controller.stop("paused")
                 except KeyboardInterrupt:
+                    self.agent.goal_controller.stop("paused")
                     self.agent.request_stop()
                     self.bus.warning("Interrupted.")
                 except BaseException as error:
+                    if not concurrent:
+                        self.agent.goal_controller.stop(
+                            "usage_limited"
+                            if getattr(error, "status_code", None) == 429
+                            else "blocked"
+                        )
                     log.exception("Runtime operation failed")
                     self.commands.record_chat_failure(error)
                     self.bus.error(
@@ -369,22 +456,28 @@ class RuntimeServer:
                         if concurrent or self._closing
                         else self.commands.next_pending()
                     )
+                    if not concurrent and value is None and len(self._workers) == 1:
+                        value = self._next_goal()
                     if not concurrent and value is None:
                         self._running = False
                     self._publish_state()
         except BaseException:
             log.exception("Runtime could not record or publish its result")
             with self._lock:
+                self._closing = True
                 if not concurrent:
                     self._running = False
             self.peer.close()
         finally:
             with self._lock:
                 self._workers.discard(threading.current_thread())
+                self._wake_goal()
                 self._lock.notify_all()
 
     def interrupt(self):
-        result = self.agent.request_interrupt_intent()
+        with self._lock:
+            result = self.agent.request_interrupt_intent()
+        self.agent.goal_controller.stop("paused")
         self._publish_state()
         return {
             "outcome": result.outcome.value,

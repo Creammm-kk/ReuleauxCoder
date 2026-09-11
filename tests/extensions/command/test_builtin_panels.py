@@ -6,6 +6,7 @@ from reuleauxcoder.extensions.command.builtin import (
 
 def test_builtin_command_features_contribute_all_interactive_panels_in_order() -> None:
     expected = (
+        "goal",
         "approval_rules",
         "mcp_servers",
         "mode_profiles",

@@ -52,6 +52,8 @@ class RuntimeClient:
         self._state(self.info["state"])
         for event in self.info["runtime_events"]:
             self.ui_bus.emit_runtime(event)
+        if self.info.get("goals"):
+            self._state(decode(self.peer.request("runtime.ready")))
         return self.info
 
     def _state(self, state):

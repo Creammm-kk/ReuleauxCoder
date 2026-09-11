@@ -1,6 +1,7 @@
 """Frontend snapshots contain data, never live runtime objects."""
 
 from dataclasses import dataclass
+from reuleauxcoder.domain.goal import Goal
 
 
 @dataclass(frozen=True, slots=True)
@@ -25,6 +26,7 @@ class RuntimeSnapshot:
     approval_waiting: int = 0
     mode: str | None = None
     approval_policy: str = ""
+    goal: Goal | None = None
 
 
 @dataclass(frozen=True, slots=True)

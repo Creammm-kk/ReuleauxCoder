@@ -31,6 +31,7 @@ def _example(trigger):
         "#|id|latest": "latest",
         "text": "follow this up",
         "on|off": "on",
+        "tokens|none": "1000",
     }
     text = re.sub(r"<([^>]+)>", lambda match: values[match[1]], trigger.value)
     return (

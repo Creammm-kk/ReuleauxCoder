@@ -4,6 +4,20 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any, Protocol
+from reuleauxcoder.domain.goal import Goal
+
+
+@dataclass(frozen=True, slots=True)
+class GoalViewModel:
+    goal: Goal | None
+    default_token_budget: int | None = None
+    view_type: str = "goal"
+
+    def to_payload(self) -> dict[str, Any]:
+        return {
+            "goal": self.goal.to_dict() if self.goal else None,
+            "default_token_budget": self.default_token_budget,
+        }
 
 
 class ViewModel(Protocol):
