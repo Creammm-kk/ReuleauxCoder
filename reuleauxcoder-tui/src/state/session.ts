@@ -4,7 +4,7 @@ import {emptyState, typeOf, type Json, type RecordData, type RuntimeState, type 
 import {diff, fields} from '../ui/format.js';
 import {updateProcess, type ProcessView} from './processes.js';
 
-export interface Cell {id: string; kind: 'user' | 'assistant' | 'reasoning' | 'tool' | 'notice'; title: string; body: string; details: string; revision: number; streaming: boolean; tone?: string; tool?: {name: string; arguments: RecordData; outcome?: RecordData}}
+export interface Cell {id: string; kind: 'user' | 'assistant' | 'reasoning' | 'tool' | 'notice'; title: string; body: string; details: string; revision: number; appendRevision?: number; streaming: boolean; tone?: string; tool?: {name: string; arguments: RecordData; outcome?: RecordData}}
 export class SessionStore extends EventEmitter {
   state: RuntimeState = emptyState;
   cells: Cell[] = [];
@@ -18,6 +18,7 @@ export class SessionStore extends EventEmitter {
   fatal: string | null = null;
   connected = false;
   contentRevision = 0;
+  sidebarRevision = 0;
   private dirtyIndex = 0;
   private cellIndices = new WeakMap<Cell, number>();
   private streaming = new Set<Cell>();
@@ -39,7 +40,12 @@ export class SessionStore extends EventEmitter {
     return cell;
   }
   notice(message: string, tone = 'info') {const cell = this.add('notice', tone === 'error' ? 'Error' : 'Notice', message); cell.tone = tone; this.emit('change');}
-  clear() {this.cells = []; this.streaming.clear(); this.dirtyIndex = 0; this.contentRevision++; this.tools.clear(); this.jobs.clear(); this.processes.clear(); this.diagnostics.clear(); this.operations.clear(); this.reviewedDiffs.clear(); this.assistant = this.reasoning = undefined; this.plan = {items: []}; this.progress = {};}
+  clear() {this.cells = []; this.streaming.clear(); this.dirtyIndex = 0; this.contentRevision++; this.sidebarRevision++; this.tools.clear(); this.jobs.clear(); this.processes.clear(); this.diagnostics.clear(); this.operations.clear(); this.reviewedDiffs.clear(); this.assistant = this.reasoning = undefined; this.plan = {items: []}; this.progress = {};}
+  get activeCell(): Cell | undefined {
+    let latest: Cell | undefined, tool: Cell | undefined;
+    for (const cell of this.streaming) {latest = cell; if (cell.kind === 'tool') tool = cell;}
+    return tool ?? latest;
+  }
   takeDirtyIndex() {const index = this.dirtyIndex; this.dirtyIndex = Infinity; return index;}
   update(state: RuntimeState) {
     if (state.session_generation > this.generation) {this.clear(); this.generation = state.session_generation;}
@@ -104,7 +110,7 @@ export class SessionStore extends EventEmitter {
         if (p.reasoning) {this.appendReasoning(p); break;}
         this.finishCell(this.reasoning); this.reasoning = undefined;
         this.assistant ??= this.add('assistant', 'Reuleaux', '', '', true);
-        this.assistant.body += p.text; this.touch(this.assistant); break;
+        this.assistant.body += p.text; this.touch(this.assistant, true); break;
       case 'ReasoningDelta': this.appendReasoning(p); break;
       case 'TurnFinished': case 'ChatCompleted':
         if (!this.assistant && p.render_response && p.response) this.assistant = this.add('assistant', 'Reuleaux', p.response);
@@ -145,10 +151,11 @@ export class SessionStore extends EventEmitter {
         }
         break;
       }
-      case 'SubagentJobChanged': this.jobs.set(p.job_id, p); break;
+      case 'SubagentJobChanged': this.jobs.set(p.job_id, p); this.sidebarRevision++; break;
       case 'ProcessSessionChanged': {
         const process = updateProcess(this.processes.get(p.process_session_id), p);
         this.processes.set(p.process_session_id, process);
+        this.sidebarRevision++;
         this.processCompleted(process);
         break;
       }
@@ -167,7 +174,7 @@ export class SessionStore extends EventEmitter {
   private appendReasoning(p: RecordData) {
     this.finishCell(this.assistant); this.assistant = undefined;
     this.reasoning ??= this.add('reasoning', 'Thinking', '', '', true);
-    this.reasoning.body += p.text; this.touch(this.reasoning);
+    this.reasoning.body += p.text; this.touch(this.reasoning, this.reasoning.tone === (p.display_mode === 'inline' ? 'inline' : 'collapsed'));
     this.reasoning.tone = p.display_mode === 'inline' ? 'inline' : 'collapsed';
   }
   private processCompleted(process: ProcessView) {
@@ -181,5 +188,5 @@ export class SessionStore extends EventEmitter {
   private finishCell(cell: Cell | undefined) {
     if (cell?.streaming) {cell.streaming = false; this.streaming.delete(cell); this.touch(cell);}
   }
-  private touch(cell: Cell) {cell.revision++; this.contentRevision++; this.dirtyIndex = Math.min(this.dirtyIndex, this.cellIndices.get(cell)!);}
+  private touch(cell: Cell, appended = false) {cell.revision++; if (appended) cell.appendRevision = (cell.appendRevision ?? 0) + 1; this.contentRevision++; this.dirtyIndex = Math.min(this.dirtyIndex, this.cellIndices.get(cell)!);}
 }

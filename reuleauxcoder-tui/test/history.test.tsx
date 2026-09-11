@@ -50,6 +50,27 @@ test('a multi-megabyte streaming message only lays out its visible tail', () => 
   assert(layout.retainedRows <= 6000);
 });
 
+for (const reasoning of [false, true]) test(`${reasoning ? 'reasoning' : 'assistant'} appends retain stable blocks and Markdown fence state`, () => {
+  const session = new SessionStore(), layout = new TranscriptLayout();
+  const append = (text: string) => session.runtime({payload: decode(record(reasoning ? 'ReasoningDelta' : 'AssistantContentDelta', {text, display_mode: 'inline'}))});
+  const draw = () => layout.render(session.cells, 80, 24, null, true, session.takeDirtyIndex());
+  const fresh = () => new TranscriptLayout().render(session.cells, 80, 24, null, true).rows;
+  append('```ts\n' + 'const value = "中文";\n'.repeat(100_000)); draw();
+  for (const chunk of ['x'.repeat(4090), '👩🏽‍💻', '\n```\n\n[**Docs**](https://example.com)\n', 'More 中文\n'.repeat(600)]) {
+    const scanned = layout.scannedChars;
+    append(chunk);
+    assert.deepEqual(draw().rows, fresh());
+    assert(layout.scannedChars - scanned <= chunk.length + 4096, 'only the old tail and appended text are scanned');
+  }
+  const beginning = layout.render(session.cells, 80, 24, 0, true, Infinity);
+  append('last token');
+  assert.deepEqual(layout.render(session.cells, 80, 24, beginning.start, true, session.takeDirtyIndex()).rows, beginning.rows);
+  session.runtime({payload: decode(record('TurnFinished', {}))});
+  assert.deepEqual(draw().rows, fresh(), 'completion can change Markdown rendering without stale rows');
+  session.clear(); append('Replacement session');
+  assert.deepEqual(draw().rows, fresh());
+});
+
 test('Ink history reads and searches the real ledger over RPC without filling the transcript', async t => {
   const b = await backend(); t.after(() => b.close());
   const c = b.controller;

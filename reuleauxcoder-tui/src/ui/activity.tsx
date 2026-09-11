@@ -13,8 +13,7 @@ export function activityFor(c: TuiController) {
   if (c.active || c.session.state.approval_waiting) return {label: 'Waiting for your input', moving: false};
   if (c.session.state.stopping) return {label: 'Stopping…', moving: true};
   if (!c.session.state.running) return null;
-  const cell = c.session.cells.findLast(cell => cell.streaming && cell.kind === 'tool')
-    ?? c.session.cells.findLast(cell => cell.streaming);
+  const cell = c.session.activeCell;
   if (cell && isProcessPoll(cell)) {
     const id = cell.tool!.arguments.session_id;
     return {label: `Waiting · ${safe(c.session.processes.get(id)?.command || id)}`, moving: true};

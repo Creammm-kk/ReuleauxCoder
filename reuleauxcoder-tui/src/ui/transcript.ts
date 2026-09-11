@@ -6,8 +6,8 @@ import sliceAnsi from 'slice-ansi';
 
 const BLOCK_CHARS = 4096;
 const CACHE_ROWS = 6000;
-interface Block {id: string; cell: Cell; text: string; first: boolean; last: boolean; number: number; tools?: Cell[]; fence?: string}
-interface Group {start: number; entry: number; number: number}
+interface Block {id: string; cell: Cell; text: string; offset: number; first: boolean; last: boolean; number: number; tools?: Cell[]; fence?: string}
+interface Group {start: number; entry: number; number: number; cell: Cell; revision: number; appendRevision: number}
 
 /** Prefix sums support append, tail replacement and visible-height corrections. */
 class Heights {
@@ -49,6 +49,7 @@ export class TranscriptLayout {
   private start = 0;
   private anchor?: {id: string; row: number};
   measurements = 0;
+  scannedChars = 0;
   get retainedRows() {return this.cacheRows;}
 
   render(cells: Cell[], width: number, height: number, offset: number | null, expanded: boolean, dirty = 0) {
@@ -57,9 +58,10 @@ export class TranscriptLayout {
     let anchor = offset === null ? undefined : offset === this.start ? this.anchor : this.blocks[oldIndex] && {id: this.blocks[oldIndex].id, row: offset - this.heights.sum(oldIndex)};
     const resized = this.width !== width;
     if (resized && anchor && this.width) anchor = {...anchor, row: Math.floor(anchor.row * this.width / width)};
-    if (this.cells !== cells || this.expanded !== expanded) dirty = 0;
+    const reset = this.cells !== cells || this.expanded !== expanded;
+    if (reset) dirty = 0;
     this.cells = cells; this.expanded = expanded;
-    this.sync(cells, dirty);
+    this.sync(cells, dirty, reset);
     if (resized) {
       this.width = width; this.cache.clear(); this.cacheRows = 0; this.measured.clear(); this.heights.truncate(0);
       for (const block of this.blocks) this.heights.push(this.estimate(block));
@@ -88,8 +90,18 @@ export class TranscriptLayout {
     return {rows: visible, total: total(), start: this.start, estimated: this.measured.size < this.blocks.length};
   }
 
-  private sync(cells: Cell[], dirty: number) {
+  private sync(cells: Cell[], dirty: number, reset: boolean) {
     if (dirty === Infinity) return;
+    const tail = this.groups.at(-1), last = this.blocks.at(-1), cell = cells.at(-1);
+    // The reducer certifies append-only revisions. Never compare the entire old prefix.
+    if (!reset && tail && last && cell === tail.cell && dirty === tail.start
+      && (cell.kind === 'assistant' || cell.kind === 'reasoning') && !(this.expanded && cell.details)
+      && cell.revision > tail.revision && cell.revision - tail.revision === (cell.appendRevision ?? 0) - tail.appendRevision) {
+      this.blocks.pop(); this.heights.truncate(this.blocks.length); this.measured.delete(last.id);
+      this.appendBlocks(cell, tail.number, cell.body, undefined, last.offset, this.blocks.length - tail.entry, last.fence);
+      tail.revision = cell.revision; tail.appendRevision = cell.appendRevision ?? 0;
+      return;
+    }
     // Include the previous cell so newly appended tools can join its group.
     let lo = 0, hi = this.groups.length;
     while (lo < hi) {const mid = (lo + hi) >>> 1; if (this.groups[mid].start < Math.max(0, dirty - 1)) lo = mid + 1; else hi = mid;}
@@ -104,33 +116,37 @@ export class TranscriptLayout {
       const cell = group[0];
       while (cells[cellIndex] !== cell) cellIndex++;
       if (cell.kind === 'user' || cell.kind === 'assistant') number++;
-      this.groups.push({start: cellIndex, entry: this.blocks.length, number});
+      this.groups.push({start: cellIndex, entry: this.blocks.length, number, cell, revision: cell.revision, appendRevision: cell.appendRevision ?? 0});
       const tools = !this.expanded && cell.kind === 'tool' ? group : undefined;
       const content = tools ? '' : this.expanded && cell.details
         ? cell.kind === 'tool' && !cell.tool?.outcome ? cell.details + '\n\n' + cell.body : cell.details : cell.body;
-      let position = 0, part = 0, fence: string | undefined;
-      do {
-        let end = Math.min(content.length, position + BLOCK_CHARS);
-        if (end < content.length) {
-          const newline = content.lastIndexOf('\n', end);
-          if (newline > position) end = newline + 1;
-          // Never split a UTF-16 surrogate pair.
-          else if (/[\uD800-\uDBFF]/.test(content[end - 1])) end--;
-        }
-        const block = {id: `${cell.id}:${part++}`, cell, text: content.slice(position, end), first: position === 0, last: end === content.length, number, tools, fence};
-        if (cell.kind === 'assistant' || cell.kind === 'reasoning') {
-          for (const match of block.text.matchAll(/^ {0,3}(`{3,}|~{3,})([^\n]*)$/gm)) {
-            if (!fence) fence = match[1] + match[2];
-            else if (match[1][0] === fence[0] && match[1].length >= fence.match(/^(`+|~+)/)![0].length && !match[2].trim()) fence = undefined;
-          }
-        }
-        this.positions.set(block.id, this.blocks.length); this.blocks.push(block); this.heights.push(this.estimate(block));
-        position = end;
-      } while (position < content.length);
+      this.appendBlocks(cell, number, content, tools);
       cellIndex += group.length;
     }
     // LRU entries retain only bounded strings; discard removed identities too.
     for (const [id, cached] of this.cache) if (!this.positions.has(id)) {this.cache.delete(id); this.cacheRows -= cached.rows.length;}
+  }
+
+  private appendBlocks(cell: Cell, number: number, content: string, tools?: Cell[], position = 0, part = 0, fence?: string) {
+    do {
+      let end = Math.min(content.length, position + BLOCK_CHARS);
+      if (end < content.length) {
+        const newline = content.lastIndexOf('\n', end);
+        if (newline > position) end = newline + 1;
+        // Never split a UTF-16 surrogate pair.
+        else if (/[\uD800-\uDBFF]/.test(content[end - 1])) end--;
+      }
+      const block = {id: `${cell.id}:${part++}`, cell, text: content.slice(position, end), offset: position, first: position === 0, last: end === content.length, number, tools, fence};
+      this.scannedChars += block.text.length;
+      if (cell.kind === 'assistant' || cell.kind === 'reasoning') {
+        for (const match of block.text.matchAll(/^ {0,3}(`{3,}|~{3,})([^\n]*)$/gm)) {
+          if (!fence) fence = match[1] + match[2];
+          else if (match[1][0] === fence[0] && match[1].length >= fence.match(/^(`+|~+)/)![0].length && !match[2].trim()) fence = undefined;
+        }
+      }
+      this.positions.set(block.id, this.blocks.length); this.blocks.push(block); this.heights.push(this.estimate(block));
+      position = end;
+    } while (position < content.length);
   }
   private estimate(block: Block) {
     return block.tools ? 4 : Math.max(1, Math.ceil(block.text.length / Math.max(1, this.width - 2)) + (block.text.match(/\n/g)?.length ?? 0)) + Number(block.first) + Number(block.last);
