@@ -329,7 +329,10 @@ class RuntimeServer:
                     self.bus.warning("Interrupted.")
                 except BaseException as error:
                     log.exception("Runtime operation failed")
-                    self.commands.record_chat_failure(error)
+                    try:
+                        self.commands.record_chat_failure(error)
+                    except Exception:
+                        log.exception("Failed to record chat failure")
                     self.bus.error(
                         f"Operation failed: {type(error).__name__}: {error}",
                         kind=UIEventKind.SYSTEM,
