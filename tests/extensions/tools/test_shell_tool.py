@@ -11,7 +11,7 @@ import time
 from types import SimpleNamespace
 from typing import Any, cast
 
-from reuleauxcoder.domain.process_manager import ProcessManager
+from reuleauxcoder.domain.process_manager import ProcessEventKind, ProcessManager
 from reuleauxcoder.domain.process import (
     ProcessCursor,
     ProcessHandle,
@@ -162,7 +162,7 @@ def test_invalid_inputs_are_rejected_before_process_port() -> None:
     tool = _tool(process, cwd=os.getcwd())
 
     assert "non-empty" in tool.execute("").model_text
-    assert "positive integer" in tool.execute("echo", timeout=0).model_text
+    assert "at least 0" in tool.execute("echo", timeout=-1).model_text
     assert (
         "cwd must be"
         in tool.execute(  # type: ignore[arg-type]
@@ -278,6 +278,62 @@ def test_managed_shell_yields_and_session_can_terminate(tmp_path: Path) -> None:
     stopped_facts = cast(dict[str, Any], stopped.metadata["process_snapshot"])
     assert stopped_facts["state"] in {"running", "exited"}
     manager.shutdown(grace_seconds=0)
+
+
+def test_interrupt_during_initial_wait_keeps_a_visible_controllable_process(tmp_path):
+    cancellation = threading.Event()
+    events = []
+
+    def on_process(event):
+        events.append(event)
+        if event.kind is ProcessEventKind.PUBLISHED:
+            cancellation.set()
+
+    manager = ProcessManager(event_sink=on_process)
+    backend = LocalToolBackend(
+        ExecutionContext(cwd=str(tmp_path), cancellation_event=cancellation)
+    )
+    shell = _bind(ShellTool(backend), manager)
+    session = _bind(ShellSessionTool(backend), manager)
+    try:
+        result = shell.execute(
+            _python_command("import time; print('still alive', flush=True); time.sleep(30)"),
+            yield_ms=30_000,
+        )
+        facts = result.metadata["process_snapshot"]
+        assert result.status is ToolOutcomeStatus.CANCELLED
+        assert facts["state"] == "running"
+        assert facts["runtime_timeout_seconds"] == 0
+        assert events[0].kind is ProcessEventKind.PUBLISHED
+        views = manager.list(
+            agent_id="agent", owner_session_id="session", session_generation=0
+        )
+        assert views[0].session_id == facts["session_id"]
+        cancellation.clear()
+        output = facts["stdout"]
+        deadline = time.monotonic() + 10
+        while "still alive" not in output:
+            assert time.monotonic() < deadline
+            polled = session.execute(facts["session_id"], "poll", wait_ms=250)
+            snapshot = polled.metadata["process_snapshot"]
+            assert snapshot["state"] == "running"
+            output += snapshot["stdout"]
+        cancellation.set()
+        polled = session.execute(facts["session_id"], "poll", wait_ms=30_000)
+        assert polled.status is ToolOutcomeStatus.CANCELLED
+        assert polled.metadata["process_snapshot"]["state"] == "running"
+        cancellation.clear()
+        session.execute(facts["session_id"], "terminate")
+        while True:
+            assert time.monotonic() < deadline
+            snapshot = session.execute(
+                facts["session_id"], "poll", wait_ms=250
+            ).metadata["process_snapshot"]
+            if snapshot["state"] == "exited":
+                break
+        assert snapshot["termination_reason"] == "terminated"
+    finally:
+        manager.shutdown(grace_seconds=0)
 
 
 def test_managed_shell_reports_nonzero_exit_as_process_fact(tmp_path: Path) -> None:

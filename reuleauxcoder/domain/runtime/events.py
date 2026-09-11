@@ -328,6 +328,7 @@ class ProcessSessionChanged:
     command: str
     cwd: str
     elapsed_seconds: float
+    runtime_timeout_seconds: int = 0
     stdout: str = ""
     stderr: str = ""
     exit_code: int | None = None

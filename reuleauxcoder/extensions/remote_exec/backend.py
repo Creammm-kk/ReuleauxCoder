@@ -145,6 +145,13 @@ class RemoteRelayToolBackend(ToolBackend):
         timeout = None
         if tool_name == "shell":
             timeout = args.get("timeout", 120)
+            if timeout <= 0:
+                return _remote_failure(
+                    "Legacy shell execution requires an explicit positive timeout. "
+                    "Use a bound process-session backend for background work; "
+                    "the command was not started.",
+                    metadata={"executed": False},
+                )
         else:
             timeout = 30
 
@@ -690,7 +697,7 @@ class RemoteProcessPort:
                 "runtime_timeout_ms": runtime_timeout * 1000,
                 "deadline_unix_ms": int(
                     (time.time() + runtime_timeout) * 1000
-                ),
+                ) if runtime_timeout else 0,
             },
         )
         try:

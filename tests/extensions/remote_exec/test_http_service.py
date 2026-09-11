@@ -482,7 +482,7 @@ class TestRemoteRelayHTTPService:
             legacy_forwarded_cases = [
                 (
                     ShellTool(backend=backend),
-                    {"command": "echo hello"},
+                    {"command": "echo hello", "timeout": 120},
                     "shell",
                     "shell-ok",
                 ),
@@ -1439,13 +1439,18 @@ class TestRemoteRelayHTTPService:
             finally:
                 timer.cancel()
                 cancellation.clear()
-            assert "cancelled" in cancel_result.model_text.lower()
+            assert cancel_result.status.value == "cancelled"
+            cancelled_snapshot = cancel_result.metadata["process_snapshot"]
+            assert (
+                process.poll(cancelled_snapshot["session_id"]).state
+                is ProcessState.RUNNING
+            )
             assert time.monotonic() - cancel_started < 3
             process_manager.shutdown()
             assert (
                 "still-alive"
                 in ShellTool(backend=backend)
-                .execute(command=_shell_write_command("still-alive"))
+                .execute(command=_shell_write_command("still-alive"), timeout=120)
                 .model_text
             )
 

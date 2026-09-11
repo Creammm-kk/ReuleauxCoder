@@ -37,7 +37,7 @@ from reuleauxcoder.infrastructure.platform import ShellType, get_platform_info
 from reuleauxcoder.infrastructure.process.buffer import BoundedTextBuffer
 
 
-_DEFAULT_RUNTIME_TIMEOUT_SECONDS = 120
+_DEFAULT_RUNTIME_TIMEOUT_SECONDS = 0
 _DEFAULT_INITIAL_YIELD_MS = 5_000
 _DEFAULT_POLL_WAIT_MS = 5_000
 _CONTROL_POLL_SLICE_MS = 50
@@ -47,11 +47,14 @@ _MODEL_OUTPUT_BYTES_PER_STREAM = 64 * 1024
 def _shell_description(*, local: bool) -> str:
     base = (
         "Run a command unchanged in the target environment's reported shell.\n\n"
-        "timeout is the hard total runtime limit in seconds. yield_ms only "
+        "timeout is an optional hard total runtime limit in seconds; omitted "
+        "or 0 means no runtime limit. yield_ms only "
         "controls the initial wait; it never stops the process. If the command "
         "is still running after yield_ms, this call returns a session_id and "
         "the process continues under the rcoder session. Use shell_session to "
-        "poll, write, interrupt, or terminate it.\n\n"
+        "poll, write, interrupt, or terminate it. Interrupting the current "
+        "agent turn stops waiting but leaves started processes running. "
+        "Use shell_session to stop them explicitly.\n\n"
         "cwd is a process working-directory option; do not add cd to command. "
         "tty=false uses plain pipes and keeps stdout/stderr separate. tty=true "
         "allocates a terminal and permits later writes; terminal output is a "
@@ -143,11 +146,12 @@ class ShellTool(_BoundProcessTool):
             },
             "timeout": {
                 "type": "integer",
-                "minimum": 1,
+                "minimum": 0,
                 "default": _DEFAULT_RUNTIME_TIMEOUT_SECONDS,
                 "description": (
                     "Hard runtime limit in seconds, measured from process start. "
-                    "Reaching it terminates the process tree."
+                    "Reaching it terminates the process tree. Omitted or 0 "
+                    "keeps the process running until exit or explicit cleanup."
                 ),
             },
             "yield_ms": {
@@ -404,6 +408,7 @@ class ShellTool(_BoundProcessTool):
                 origin_turn_id=turn_id,
                 stream_handler=stream_handler,
             )
+            manager.publish(handle.session_id)
             self._persist_cwd_after_start(cwd, persist_cwd)
             snapshot = self._wait_initial_snapshot(
                 manager,
@@ -415,20 +420,15 @@ class ShellTool(_BoundProcessTool):
             )
             cancellation = self.backend.current_cancellation_signal()
             if cancellation is not None and cancellation.is_set():
-                manager.abandon(handle.session_id, reason="cancelled")
                 return _outcome_from_snapshot(
                     snapshot,
                     duration=time.monotonic() - started,
                     call_cancelled=True,
                     operation_error=(
-                        "The shell tool call was cancelled before its session_id "
-                        "was published; the process tree was asked to terminate."
+                        "Stopped waiting; the process remains managed by this "
+                        "session. Use shell_session to inspect or stop it."
                     ),
                 )
-            manager.publish(
-                handle.session_id,
-                observed=snapshot.state is not ProcessState.RUNNING,
-            )
             return _outcome_from_snapshot(
                 snapshot,
                 duration=time.monotonic() - started,
@@ -494,7 +494,6 @@ class ShellTool(_BoundProcessTool):
                 owner_session_id=owner_session_id,
                 session_generation=generation,
                 wait_ms=wait_ms,
-                mark_observed=False,
             )
             stdout.append(snapshot.stdout)
             stderr.append(snapshot.stderr)

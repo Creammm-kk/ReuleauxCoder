@@ -57,6 +57,14 @@ def _port(responses):
     return RemoteProcessPort(backend), relay
 
 
+def test_remote_background_start_does_not_send_an_expired_deadline():
+    port, relay = _port([WorkspaceResult(ok=True, data={"process_id": "background"})])
+    port.start("server", cwd="/workspace", runtime_timeout=0)
+    args = relay.requests[0][0].args
+    assert args["runtime_timeout_ms"] == 0
+    assert args["deadline_unix_ms"] == 0
+
+
 def test_remote_process_preserves_command_and_retains_terminal_until_release() -> None:
     command = "first && second\nprintf '$HOME'"
     port, relay = _port(

@@ -68,7 +68,7 @@ class ProcessSnapshot:
     termination_reason: str | None = None
     started_at: float = 0.0
     finished_at: float | None = None
-    runtime_timeout_seconds: int = 0
+    runtime_timeout_seconds: int = 0  # Zero means no runtime deadline.
     output_truncated: bool = False
     output_decode_replaced: bool = False
     total_stdout_bytes: int = 0

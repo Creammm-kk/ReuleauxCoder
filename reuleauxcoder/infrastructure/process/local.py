@@ -425,9 +425,9 @@ class LocalProcessPort:
         if not isinstance(command, str) or not command:
             raise ValueError("command must be a non-empty string")
         if not isinstance(runtime_timeout, int) or isinstance(runtime_timeout, bool):
-            raise ValueError("runtime_timeout must be a positive integer")
-        if runtime_timeout < 1:
-            raise ValueError("runtime_timeout must be a positive integer")
+            raise ValueError("runtime_timeout must be a non-negative integer")
+        if runtime_timeout < 0:
+            raise ValueError("runtime_timeout must be a non-negative integer")
         if not os.path.isdir(cwd):
             raise FileNotFoundError(f"working directory does not exist ({cwd})")
 
@@ -516,14 +516,15 @@ class LocalProcessPort:
             entry.control_threads.append(watcher)
             watcher.start()
             watcher_started = True
-            deadline = threading.Thread(
-                target=self._watch_deadline,
-                args=(entry,),
-                name=f"rcoder-process-deadline-{session_id[-8:]}",
-                daemon=True,
-            )
-            entry.control_threads.append(deadline)
-            deadline.start()
+            if runtime_timeout:
+                deadline = threading.Thread(
+                    target=self._watch_deadline,
+                    args=(entry,),
+                    name=f"rcoder-process-deadline-{session_id[-8:]}",
+                    daemon=True,
+                )
+                entry.control_threads.append(deadline)
+                deadline.start()
             result_handle = ProcessHandle(session_id, mode)
             return result_handle
         except BaseException as error:

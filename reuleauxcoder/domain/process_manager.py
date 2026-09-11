@@ -282,7 +282,6 @@ class ProcessManager:
         with self._lock:
             entry = self._require_entry_locked(session_id)
             entry.published = True
-            self._ensure_watcher_started_locked(entry)
             if observed and entry.last_snapshot.state is ProcessState.EXITED:
                 entry.observed = True
                 entry.observed_at = time.monotonic()
@@ -295,6 +294,8 @@ class ProcessManager:
         self._emit(ProcessEventKind.PUBLISHED, entry, entry.last_snapshot)
         if emit_completion:
             self._emit(ProcessEventKind.COMPLETED, entry, entry.last_snapshot)
+        with self._lock:
+            self._ensure_watcher_started_locked(entry)
 
     def abandon(self, session_id: str, *, reason: str = "cancelled") -> None:
         with self._lock:

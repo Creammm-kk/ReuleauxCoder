@@ -126,8 +126,8 @@ class TestRemoteBackendDispatch:
             result = tool.execute(command="")
             assert "non-empty string" in result.model_text.lower()
 
-            result = tool.execute(command="echo ok", timeout=0)
-            assert "positive integer" in result.model_text.lower()
+            result = tool.execute(command="echo ok", timeout=-1)
+            assert "at least 0" in result.model_text.lower()
 
             result = tool.execute(command="echo ok", tty=True)
             assert "does not support pty" in result.model_text.lower()
@@ -158,10 +158,14 @@ class TestRemoteBackendDispatch:
 
             import threading
 
+            unsupported = tool.execute(command="echo hello")
+            assert "explicit positive timeout" in unsupported.model_text
+            assert received == []
+
             result_holder = {}
 
             def run_tool():
-                result_holder["result"] = tool.execute(command="echo hello")
+                result_holder["result"] = tool.execute(command="echo hello", timeout=120)
 
             t = threading.Thread(target=run_tool)
             t.start()

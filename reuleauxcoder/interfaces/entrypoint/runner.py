@@ -407,6 +407,7 @@ class AppRunner:
                     command=event.command,
                     cwd=event.cwd,
                     elapsed_seconds=snapshot.elapsed_seconds,
+                    runtime_timeout_seconds=snapshot.runtime_timeout_seconds,
                     stdout=(
                         terminal_safe_display(snapshot.stdout)
                         if carries_output
