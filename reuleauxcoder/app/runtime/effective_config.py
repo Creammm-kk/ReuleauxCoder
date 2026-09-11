@@ -68,6 +68,13 @@ def build_effective_config_view(config, agent=None) -> EffectiveConfigViewModel:
             source("session.auto_save"),
         ),
         EffectiveConfigRowViewModel(
+            "goal.default_token_budget",
+            str(config.goal_default_token_budget)
+            if config.goal_default_token_budget is not None
+            else "No limit",
+            source("goal.default_token_budget"),
+        ),
+        EffectiveConfigRowViewModel(
             "ui.verbosity", config.ui.verbosity, source("ui.verbosity")
         ),
         EffectiveConfigRowViewModel(

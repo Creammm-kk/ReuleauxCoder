@@ -660,6 +660,16 @@ class LLM:
         max_output_tokens: int | None = None,
     ) -> LLMResponse:
         """Send messages, stream back response, handle tool calls."""
+        from reuleauxcoder.domain.llm.usage import usage_recorder
+
+        recorder = usage_recorder.get()
+        usage_sink = recorder() if recorder is not None else None
+        prompt_tok = completion_tok = 0
+        cached_input_tok: int | None = None
+        received_first_chunk = False
+        content_parts: list[str] = []
+        reasoning_parts: list[str] = []
+        tc_map: dict[int, dict] = {}  # index -> {id, name, arguments_str}
         operation_id = trace_id or f"model-{uuid.uuid4().hex}"
         operation_started_monotonic = time.monotonic()
         event_metadata = dict(metadata or {})
@@ -1024,15 +1034,7 @@ class LLM:
             report_phase("await_first_chunk")
 
             # Accumulate response
-            content_parts: list[str] = []
-            reasoning_parts: list[str] = []
             tokens: list[str] = []  # Collect streamed tokens
-            tc_map: dict[int, dict] = {}  # index -> {id, name, arguments_str}
-            prompt_tok = 0
-            completion_tok = 0
-            cached_input_tok: int | None = None
-
-            received_first_chunk = False
             for chunk in _cancellable_stream_chunks(stream, cancellation_event):
                 if cancellation_event is not None and cancellation_event.is_set():
                     raise LLMRequestCancelled("LLM stream cancelled")
@@ -1296,6 +1298,22 @@ class LLM:
                         diagnostic_path
                     )
             raise
+
+        finally:
+            if usage_sink is not None and received_first_chunk:
+                estimated = not prompt_tok
+                output = "".join(content_parts + reasoning_parts) + json.dumps(tc_map)
+                usage_sink(
+                    {
+                        "input_tokens": prompt_tok
+                        or max(1, len(json.dumps(messages, ensure_ascii=False)) // 4),
+                        "cached_input_tokens": cached_input_tok,
+                        "output_tokens": completion_tok
+                        if not estimated
+                        else len(output) // 4,
+                        "estimated": estimated,
+                    }
+                )
 
     def _call_with_retry_observed(
         self,

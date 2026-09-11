@@ -18,6 +18,7 @@ BUILTIN_MODES = {
             "glob",
             "grep",
             "history_search",
+            "get_goal",
             "history_read",
             "artifact_read",
             "update_plan",
@@ -37,6 +38,9 @@ BUILTIN_MODES = {
     "debugger": {
         "description": "Debugging mode focused on diagnosis and verification.",
         "tools": [
+            "create_goal",
+            "get_goal",
+            "update_goal",
             "read_file",
             "glob",
             "grep",

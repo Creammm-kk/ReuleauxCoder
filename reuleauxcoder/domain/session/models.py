@@ -86,6 +86,7 @@ class SessionRuntimeState:
     plan_state: dict[str, Any] = field(default_factory=dict)
     progress_state: dict[str, Any] = field(default_factory=dict)
     skills_disabled: list[str] = field(default_factory=list)
+    goal: dict[str, Any] | None = None
 
     @classmethod
     def from_dict(cls, data: dict[str, Any] | None) -> "SessionRuntimeState":
@@ -108,6 +109,7 @@ class SessionRuntimeState:
             skills_disabled = []
         return cls(
             model=payload.get("model"),
+            goal=payload.get("goal"),
             active_mode=payload.get("active_mode"),
             llm_debug_trace=payload.get("llm_debug_trace"),
             active_main_model_profile=payload.get("active_main_model_profile"),
@@ -288,7 +290,11 @@ class Session:
             text = normalize_session_preview(_display_message_text(message))
             if text:
                 return text
-        return ""
+        return (
+            normalize_session_preview(self.runtime_state.goal["objective"])
+            if self.runtime_state.goal
+            else ""
+        )
 
     def get_recent_conversation(self, max_user_turns: int = 3) -> list[dict[str, str]]:
         """Return a compact human transcript, excluding protocol/tool messages."""

@@ -185,6 +185,12 @@ class _StreamingHandler(BaseHTTPRequestHandler):
                 "created": 0,
                 "model": "test",
                 "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
+                "usage": {
+                    "prompt_tokens": 100,
+                    "completion_tokens": 10,
+                    "total_tokens": 110,
+                    "prompt_tokens_details": {"cached_tokens": 80},
+                },
             },
         ]
         body = (
@@ -463,6 +469,7 @@ def test_manager_runs_background_job_through_isolated_worker(
     root = Agent(llm=_UnusedLLM(), tools=[], config=config)
     root.current_session_id = "session"
     root.runtime_working_directory = str(tmp_path)
+    goal = root.goal_controller.create("Verify isolated work", None)
     manager = get_subagent_manager(root)
     try:
         job_id = manager.submit_background(
@@ -484,6 +491,9 @@ def test_manager_runs_background_job_through_isolated_worker(
     assert job.structured_result.summary == "isolated worker complete"
     assert job.structured_result.confidence == "low"
     assert job.structured_result.unresolved
+    assert job.goal_id == goal.id
+    assert root.goal_controller.state.tokens_used == 30
+    assert root.goal_controller.state.estimated_requests == 0
 
 
 def test_worker_tool_call_round_trips_through_parent_broker(

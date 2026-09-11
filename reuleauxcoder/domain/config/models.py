@@ -418,6 +418,7 @@ class Config:
 
     # Session settings
     session_auto_save: bool = True
+    goal_default_token_budget: int | None = None
     session_dir: Optional[str] = None
 
     # CLI settings
@@ -452,6 +453,12 @@ class Config:
     def validate(self) -> list[str]:
         """Validate configuration and return list of errors."""
         errors = []
+        from reuleauxcoder.domain.goal import validate_budget
+
+        try:
+            validate_budget(self.goal_default_token_budget)
+        except ValueError as error:
+            errors.append(f"goal.default_token_budget: {error}")
         if not self.api_key:
             errors.append("api_key is required")
         if self.max_tokens < 1:

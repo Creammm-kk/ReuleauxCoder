@@ -43,6 +43,8 @@ from reuleauxcoder.domain.hooks import (
 from reuleauxcoder.domain.history import HistoryEvent, HistoryLedger
 from reuleauxcoder.domain.output_journal import OutputJournal
 from reuleauxcoder.domain.plan import PlanController
+from reuleauxcoder.domain.goal import GoalController
+from reuleauxcoder.domain.llm.usage import track_usage
 from reuleauxcoder.domain.runtime.performance import RuntimePerformanceMonitor
 from reuleauxcoder.domain.extensions import HookExtensionAdapter, LifecycleCoordinator
 from reuleauxcoder.domain.llm.tool_history import reconcile_tool_call_adjacency
@@ -224,6 +226,8 @@ class Agent:
         self._restored_replay_envelope = None
         self._resume_runtime_descriptor_hash: str | None = None
         self.plan_controller = PlanController(self)
+        self.goal_controller = GoalController(self)
+        self._goal_request: tuple[str, str] | None = None
         self._session_persist_callback = None
         self._output_journal: OutputJournal | None = None
         self._session_persist_accepts_deferred: bool | None = None
@@ -584,7 +588,10 @@ class Agent:
             return True
 
     def force_compress_context(self, strategy: str, llm) -> bool:
-        with self._context_revision_lock:
+        with (
+            track_usage(self.goal_controller.turn_usage_recorder()),
+            self._context_revision_lock,
+        ):
             candidate = [dict(message) for message in self.state.messages]
             if not self.context.force_compress(
                 candidate,
@@ -746,6 +753,7 @@ class Agent:
         self._session_persist_accepts_deferred = None
         self.context.restore_replay_state(history_version=0, cache_epoch=0)
         self.plan_controller.reset()
+        self.goal_controller.restore(None)
 
     def request_stop(self) -> None:
         """Request cooperative stop for the current/next agent loop iteration."""
@@ -1019,6 +1027,9 @@ class Agent:
         """Return whether a tool belongs to this root/child agent scope."""
         child_only = {"report_to_parent", "request_guidance"}
         root_only = {
+            "create_goal",
+            "get_goal",
+            "update_goal",
             "update_plan",
             "spawn_agent",
             "send_message",
@@ -1678,9 +1689,29 @@ class Agent:
     def _has_subagent_activity(self) -> bool:
         return self._wait_for_subagent_activity(timeout=0.0)
 
-    def chat(self, user_input: str) -> str:
+    def chat(
+        self,
+        user_input: str,
+        *,
+        goal_continuation: bool = False,
+        clear_stop: bool = True,
+    ) -> str:
+        scope = (
+            track_usage(self.goal_controller.turn_usage_recorder())
+            if self.subagent_depth == 0
+            else nullcontext()
+        )
+        with scope:
+            return self._chat_turn(
+                user_input, goal_continuation=goal_continuation, clear_stop=clear_stop
+            )
+
+    def _chat_turn(
+        self, user_input: str, *, goal_continuation: bool, clear_stop: bool
+    ) -> str:
         """Process one user message."""
-        self.clear_stop_request()
+        if clear_stop:
+            self.clear_stop_request()
         self._current_turn_id = uuid.uuid4().hex
         with self._steering_lock:
             self._accepting_user_steering = True
@@ -1707,10 +1738,20 @@ class Agent:
         self._flush_pending_subagent_injections()
 
         # Add user message
-        self._append_message(
-            {"role": "user", "content": user_input}, source="user_input"
-        )
-        self._emit_event(AgentEvent.chat_start(user_input))
+        if goal_continuation:
+            self._append_message(
+                synthetic_user_message(
+                    "runtime_instruction",
+                    "Continue the active goal from the current state. Consult the goal in execution_state.",
+                    source="goal_continuation",
+                ),
+                source="goal_continuation",
+            )
+        else:
+            self._append_message(
+                {"role": "user", "content": user_input}, source="user_input"
+            )
+        self._emit_event(AgentEvent.chat_start("" if goal_continuation else user_input))
 
         # Run the loop
         try:
@@ -1832,6 +1873,7 @@ class Agent:
             self._turn_attempt_counter = 0
             self._turn_interrupted_marker_recorded = False
         self.plan_controller.reset()
+        self.goal_controller.restore(None)
         self._control_plane_recovery_required = False
         self.persist_runtime_snapshot()
 

@@ -11,6 +11,11 @@ from reuleauxcoder.extensions.tools.builtin.control import (
 )
 from reuleauxcoder.extensions.tools.builtin.edit import EditFileTool
 from reuleauxcoder.extensions.tools.builtin.glob import GlobTool
+from reuleauxcoder.extensions.tools.builtin.goal import (
+    CreateGoalTool,
+    GetGoalTool,
+    UpdateGoalTool,
+)
 from reuleauxcoder.extensions.tools.builtin.grep import GrepTool
 from reuleauxcoder.extensions.tools.builtin.history import (
     ArtifactReadTool,
@@ -42,6 +47,9 @@ from reuleauxcoder.extensions.tools.builtin.web import WebFetchTool, WebSearchTo
 from reuleauxcoder.extensions.tools.builtin.write import WriteFileTool
 
 _BUILTIN_TOOL_TYPES: tuple[type[Tool], ...] = (
+    CreateGoalTool,
+    GetGoalTool,
+    UpdateGoalTool,
     UpdatePlanTool,
     ReportProgressTool,
     ReportToParentTool,

@@ -494,6 +494,9 @@ class ConfigLoader:
             session_auto_save=session_config.get(
                 "auto_save", DEFAULTS["session_auto_save"]
             ),
+            goal_default_token_budget=(data.get("goal") or {}).get(
+                "default_token_budget"
+            ),
             session_dir=session_config.get("dir"),
             history_file=cli_config.get("history_file"),
             llm_debug_trace=bool(

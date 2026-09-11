@@ -391,7 +391,10 @@ def build_session_runtime_state(config: Config, agent: Agent) -> SessionRuntimeS
     disabled_names = getattr(skills_service, "disabled_names", None)
     if disabled_names is None:
         disabled_names = getattr(getattr(config, "skills", None), "disabled", []) or []
+    goal_controller = getattr(agent, "goal_controller", None)
+    goal = goal_controller.state if goal_controller is not None else None
     return SessionRuntimeState(
+        goal=goal.to_dict() if goal else None,
         model=getattr(agent.llm, "model", None) or getattr(config, "model", None),
         active_mode=getattr(agent, "active_mode", None),
         llm_debug_trace=getattr(agent.llm, "debug_trace", None),
@@ -518,6 +521,9 @@ def apply_session_runtime_state(session: Session, config: Config, agent: Agent) 
     plan_controller = getattr(agent, "plan_controller", None)
     if plan_controller is not None:
         plan_controller.restore(runtime.plan_state, runtime.progress_state)
+    goal_controller = getattr(agent, "goal_controller", None)
+    if goal_controller is not None:
+        goal_controller.restore(runtime.goal, session.history_events)
     restore_checkpoints = getattr(agent.context, "restore_checkpoints", None)
     if callable(restore_checkpoints):
         restore_checkpoints(list(getattr(session, "checkpoints", ())))

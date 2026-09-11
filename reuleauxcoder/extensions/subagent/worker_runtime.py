@@ -375,6 +375,9 @@ def worker_process_main(
 
     spec = WorkerSpec.from_dict(spec_data)
     client = WorkerIPCClient(spec, connection, cancel)
+    from reuleauxcoder.domain.llm.usage import usage_recorder
+
+    usage_recorder.set(lambda: lambda usage: client.send("llm_usage", usage))
     try:
         llm = LLM(**spec.llm_kwargs)
         tools: list[Tool] = [
@@ -516,6 +519,7 @@ def run_isolated_worker(
     timeout_seconds: int,
     directive_source: Callable[[], list] | None = None,
     event_sink: Callable[[AgentEvent], None] | None = None,
+    usage_sink: Callable[[dict], None] | None = None,
     checkpoint_sink: (
         Callable[[str, WorkerExecutionResult, dict[str, Any]], bool] | None
     ) = None,
@@ -641,6 +645,9 @@ def run_isolated_worker(
                 )
                 if event_sink is not None and cancel_started is None:
                     event_sink(runtime_event_to_agent_event(runtime))
+            elif envelope.type == "llm_usage":
+                if usage_sink is not None:
+                    usage_sink(envelope.payload)
             elif envelope.type == "directive_ack":
                 directive_ids = envelope.payload.get("directive_ids") or []
                 if isinstance(directive_ids, list):

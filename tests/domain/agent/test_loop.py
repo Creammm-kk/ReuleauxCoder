@@ -9,6 +9,7 @@ from reuleauxcoder.domain.hooks.types import BeforeLLMRequestContext, HookPoint
 from reuleauxcoder.domain.context.replay import content_hash
 from reuleauxcoder.domain.llm.models import LLMResponse, ToolCall
 from reuleauxcoder.domain.plan import PlanState, ProgressState
+from reuleauxcoder.domain.goal import GoalController
 from reuleauxcoder.services.llm.client import LLMRequestCancelled
 from reuleauxcoder.services.prompt.builder import system_prompt
 
@@ -41,6 +42,7 @@ class _AgentStub:
             progress=ProgressState(),
         )
         self._subagent_manager = None
+        self.goal_controller = GoalController(self)
         self.runtime_issues = ()
 
     def get_active_mode_config(self):
@@ -1207,5 +1209,7 @@ def test_unpublished_runtime_facts_stop_before_the_next_model_request() -> None:
     executor = _BlockedExecutor()
     agent = Agent(llm=_NeverCalledLLM(), tools=[], executor=executor)
 
-    assert agent._loop.run() == "(stopped: runtime failure facts could not be published)"
+    assert (
+        agent._loop.run() == "(stopped: runtime failure facts could not be published)"
+    )
     assert executor.flush_calls == 1

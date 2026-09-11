@@ -215,3 +215,6 @@ skills:
 #         DATABASE_URL: "postgresql://user:pass@localhost/db"
 #       cwd: null
 #       enabled: false
+
+goal:
+  default_token_budget: null # Cumulative input - cached input + output; null means no limit.

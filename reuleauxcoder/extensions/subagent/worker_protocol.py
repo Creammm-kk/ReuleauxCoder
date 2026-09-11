@@ -6,13 +6,14 @@ from dataclasses import asdict, dataclass, field
 import hashlib
 import json
 import uuid
-from typing import Any, Literal
+from typing import Any, Literal, get_args
 
 
 WORKER_PROTOCOL_VERSION = 1
 WorkerMessageType = Literal[
     "ready",
     "runtime_event",
+    "llm_usage",
     "tool_request",
     "tool_result",
     "directive",
@@ -169,17 +170,7 @@ class WorkerEnvelope:
         if version != WORKER_PROTOCOL_VERSION:
             raise ValueError(f"unsupported worker protocol version: {version}")
         message_type = _required_str(values, "type")
-        if message_type not in {
-            "ready",
-            "runtime_event",
-            "tool_request",
-            "tool_result",
-            "directive",
-            "directive_ack",
-            "park_ack",
-            "checkpoint",
-            "terminal",
-        }:
+        if message_type not in get_args(WorkerMessageType):
             raise ValueError(f"unsupported worker message type: {message_type}")
         return cls(
             type=message_type,  # type: ignore[arg-type]

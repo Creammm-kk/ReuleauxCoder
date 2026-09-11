@@ -116,6 +116,7 @@ def _publish_job_event(parent_agent, job: "SubagentJob") -> None:
                 "guidance_deadline_at": job.guidance_deadline_at,
                 "resume_reference": job.resume_reference,
                 "prompt_tokens": job.prompt_tokens,
+                "goal_id": job.goal_id,
                 "completion_tokens": job.completion_tokens,
                 "tool_calls": job.tool_calls,
                 "worker_generation": job.worker_generation,
@@ -317,6 +318,7 @@ class SubagentJob:
     guidance_deadline_at: float | None = None
     resume_reference: str | None = None
     prompt_tokens: int = 0
+    goal_id: str | None = None
     completion_tokens: int = 0
     tool_calls: int = 0
     worker_generation: int = 0
@@ -535,11 +537,14 @@ class SubagentManager:
         )
         job_id = f"sj_{uuid.uuid4().hex[:10]}"
         now = time.time()
+        goal_controller = getattr(parent_agent, "goal_controller", None)
+        goal = goal_controller.state if goal_controller else None
         job = SubagentJob(
             id=job_id,
             mode=mode,
             task=task,
             status="queued",
+            goal_id=goal.id if goal and goal.status == "active" else None,
             created_at=now,
             parent_agent_id=parent_agent_id,
             parent_session_id=getattr(parent_agent, "current_session_id", None),
@@ -620,6 +625,7 @@ class SubagentManager:
                     model_profile_name=model_profile_name,
                     cancel_event=cancel_event,
                     job_id=job_id,
+                    goal_id=job.goal_id,
                     context_mode=context_mode,
                     worktree=worktree,
                     resume_reference=active_resume_reference,
@@ -964,6 +970,7 @@ class SubagentManager:
                 ),
                 resume_reference=payload.get("resume_reference"),
                 prompt_tokens=int(payload.get("prompt_tokens") or 0),
+                goal_id=payload.get("goal_id"),
                 completion_tokens=int(payload.get("completion_tokens") or 0),
                 tool_calls=int(payload.get("tool_calls") or 0),
                 worker_generation=int(payload.get("worker_generation") or 0),
@@ -1152,6 +1159,7 @@ class SubagentManager:
                     model_profile_name=job.model_profile_name,
                     cancel_event=cancel_event,
                     job_id=job.id,
+                    goal_id=job.goal_id,
                     context_mode=job.context_mode,
                     depth=job.depth,
                     resume_reference=job.resume_reference,
@@ -2181,6 +2189,7 @@ def run_subagent_task(
     model_profile_name: str | None = None,
     cancel_event: threading.Event | None = None,
     job_id: str | None = None,
+    goal_id: str | None = None,
     context_mode: str = "recent",
     depth: int = 1,
     worktree: bool = False,
@@ -2342,6 +2351,11 @@ def run_subagent_task(
         timeout_seconds=effective_timeout_seconds,
         directive_source=((lambda: manager.drain_messages(job_id)) if job_id else None),
         event_sink=parent_event_sink,
+        usage_sink=(
+            lambda usage: parent_agent.goal_controller.record_usage(goal_id, usage)
+        )
+        if goal_id
+        else None,
         checkpoint_sink=(
             (
                 lambda reference, checkpoint, payload: manager.commit_worker_checkpoint(
