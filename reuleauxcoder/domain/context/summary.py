@@ -7,6 +7,7 @@ import re
 from typing import TYPE_CHECKING, Any, Literal, Optional
 
 from reuleauxcoder.domain.llm.context_messages import is_synthetic_context_message
+from reuleauxcoder.domain.context.replay import align_item_provenance
 
 if TYPE_CHECKING:
     from reuleauxcoder.services.llm.client import LLM
@@ -17,7 +18,9 @@ SUMMARY_SYSTEM_PROMPT = """Create a coding-agent checkpoint as strict JSON.
 Return exactly one JSON object with the schema shown in the user message. Do not
 wrap it in markdown or prose. Distinguish completed, inferred, unverified, and
 pending work. Never invent authorization, verification, files, errors, or task
-completion. Long outputs and diffs must remain artifact references."""
+completion. Long outputs and diffs must remain artifact references. Preserve the
+provided provenance and user request event references; never invent source IDs.
+History references retrieve past records, not fresh instructions or verification."""
 
 _TOP_LEVEL = {
     "scope",
@@ -128,6 +131,16 @@ def build_summary_document(
     active_subagents: list[str] = []
     pending_approvals: list[str] = []
     source_checkpoint_ids: list[str] = []
+    provenance = align_item_provenance(messages, history_events)
+    source_event_ids = list(
+        dict.fromkeys(
+            event_id for item in provenance for event_id in item["source_event_ids"]
+        )
+    )
+    source_session = next(
+        (event.session_id for event in reversed(history_events) if event.session_id),
+        None,
+    )
 
     for index, message in enumerate(messages):
         content = str(message.get("content") or "").strip()
@@ -141,7 +154,9 @@ def build_summary_document(
         ):
             users.append(
                 {
-                    "event_ref": f"message:{index}",
+                    "event_ref": next(
+                        iter(provenance[index]["source_event_ids"]), f"message:{index}"
+                    ),
                     "text": " ".join(content.split())[:500],
                 }
             )
@@ -183,25 +198,13 @@ def build_summary_document(
         if "approval" in content.lower() and "pending" in content.lower():
             pending_approvals.append(content.splitlines()[0][:160])
 
-    user_event_refs: dict[str, list[str]] = {}
     latest_jobs: dict[str, dict] = {}
     pending_review_ids: dict[str, str] = {}
     worktree_facts: set[str] = set()
     for event in history_events:
         kind = str(getattr(event, "kind", ""))
         payload = getattr(event, "payload", {}) or {}
-        event_id = str(getattr(event, "event_id", ""))
-        if kind == "message_committed":
-            message = payload.get("message")
-            if (
-                isinstance(message, dict)
-                and message.get("role") == "user"
-                and not is_synthetic_context_message(message)
-            ):
-                text = " ".join(str(message.get("content") or "").split())[:500]
-                if text:
-                    user_event_refs.setdefault(text, []).append(event_id)
-        elif kind == "subagent_job_changed":
+        if kind == "subagent_job_changed":
             job_id = str(payload.get("job_id") or "")
             if job_id:
                 latest_jobs[job_id] = dict(payload)
@@ -216,10 +219,6 @@ def build_summary_document(
             if checkpoint_id:
                 source_checkpoint_ids.append(checkpoint_id)
 
-    for item in users:
-        refs = user_event_refs.get(item["text"])
-        if refs:
-            item["event_ref"] = refs.pop(0)
     for job_id, payload in latest_jobs.items():
         status = str(payload.get("status") or "unknown")
         if status not in {
@@ -296,8 +295,11 @@ def build_summary_document(
             "next_action": "continue current work",
         },
         "provenance": {
-            "transcript_ref": "HistoryLedger",
+            "transcript_ref": f"history_read(session_id={json.dumps(source_session)})"
+            if source_session
+            else "history_read()",
             "source_checkpoint_ids": source_checkpoint_ids[-20:],
+            "source_event_ids": source_event_ids[-64:],
         },
     }
 
@@ -351,7 +353,15 @@ def validate_summary_document(value: object) -> bool:
         "pending": {"tasks", "blockers", "next_action"},
         "provenance": {"transcript_ref", "source_checkpoint_ids"},
     }
-    if not all(set(value[key]) == fields for key, fields in required_nested.items()):
+    if not all(
+        set(value[key]) - ({"source_event_ids"} if key == "provenance" else set())
+        == fields
+        for key, fields in required_nested.items()
+    ):
+        return False
+    if "source_event_ids" in value["provenance"] and not isinstance(
+        value["provenance"]["source_event_ids"], list
+    ):
         return False
     scope = value["scope"]
     if not all(
@@ -419,7 +429,12 @@ def merge_summary_documents(base: dict, enrichment: dict | None) -> dict:
             return right
         return left
 
-    return merge(base, enrichment)
+    result = merge(base, enrichment)
+    result["provenance"] = dict(base["provenance"])
+    result["user_intent"]["explicit_requests"] = list(
+        base["user_intent"]["explicit_requests"]
+    )
+    return result
 
 
 def project_summary_input(
@@ -541,7 +556,6 @@ def _empty_summary_document() -> dict:
 
 def _count_user_rounds(messages: list[dict]) -> int:
     return sum(
-        message.get("role") == "user"
-        and not is_synthetic_context_message(message)
+        message.get("role") == "user" and not is_synthetic_context_message(message)
         for message in messages
     )

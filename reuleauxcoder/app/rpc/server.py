@@ -21,6 +21,8 @@ from reuleauxcoder.app.ui_events import AgentEventBridge, UIEventKind
 from reuleauxcoder.domain.session.models import Session
 from reuleauxcoder.domain.runtime.events import RuntimeEvent, SubagentJobChanged
 from reuleauxcoder.infrastructure.rpc.peer import RpcError, RpcPeer
+from reuleauxcoder.infrastructure.fs.paths import get_sessions_dir
+from reuleauxcoder.infrastructure.persistence.history_query import SessionHistory
 
 log = logging.getLogger(__name__)
 
@@ -115,6 +117,13 @@ class RuntimeServer:
                 "runtime.shutdown": self.shutdown,
                 "runtime.snapshot": lambda: encode(self.snapshot()),
                 "runtime.git": self.git_snapshot,
+                "history.read": lambda **params: self.history_query("read", **params),
+                "history.search": lambda **params: self.history_query(
+                    "search", **params
+                ),
+                "history.artifact": lambda **params: self.history_query(
+                    "artifact", **params
+                ),
                 "view.panel": lambda payload: encode(
                     commands.build_panel(decode(payload))
                 ),
@@ -170,6 +179,20 @@ class RuntimeServer:
         monitor = self.agent.git_monitor
         return encode(monitor.workspace_snapshot() if monitor else None)
 
+    def history_query(self, operation, session_id=None, **parameters):
+        with self._lock:
+            if not self._initialized:
+                raise RpcError(-32002, "Initialize first")
+            session_id = session_id or self.commands.session_id
+            generation = self.agent.session_generation
+        if session_id is None:
+            raise RpcError(-32002, "No saved session is available yet")
+        history = SessionHistory(
+            self.commands.sessions_dir or self.config.session_dir or get_sessions_dir()
+        )
+        page = getattr(history, operation)(session_id, **parameters)
+        return encode({"session_generation": generation, "page": page})
+
     def _publish_state(self):
         state = self.snapshot()
         self._notify("runtime.state", state=encode(state))
@@ -199,6 +222,7 @@ class RuntimeServer:
                 {
                     "version": 1,
                     "workspace_git": self.agent.git_monitor is not None,
+                    "history_query": True,
                     "catalog": self.commands.catalog,
                     "state": self.snapshot(),
                     "history_file": self.config.history_file,

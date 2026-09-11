@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import time
 import uuid
-import re
 import hashlib
 import json
 from pathlib import Path
@@ -23,6 +22,11 @@ from reuleauxcoder.domain.agent.tool_outcome import (
 from reuleauxcoder.domain.hooks.types import AfterToolExecuteContext
 from reuleauxcoder.infrastructure.fs.paths import get_tool_outputs_dir
 from reuleauxcoder.infrastructure.fs.paths import get_sessions_dir
+from reuleauxcoder.infrastructure.persistence.session_paths import (
+    is_safe_session_id,
+    session_storage_path,
+)
+from reuleauxcoder.infrastructure.workspace import LocalWorkspacePort
 
 
 class ToolOutputTruncationHook(TransformHook[AfterToolExecuteContext]):
@@ -84,7 +88,6 @@ class ToolOutputTruncationHook(TransformHook[AfterToolExecuteContext]):
                 result,
                 context.round_index,
                 session_id=context.session_id,
-                tool_call_id=tool_call.id,
             )
 
         strategy = outcome.retention_hint.strategy
@@ -160,17 +163,21 @@ class ToolOutputTruncationHook(TransformHook[AfterToolExecuteContext]):
         round_index: int | None,
         *,
         session_id: str | None,
-        tool_call_id: str | None,
     ) -> tuple[Path, str | None]:
-        safe_session = (
-            re.sub(r"[^A-Za-z0-9_.-]", "_", session_id) if session_id else None
-        )
-        if safe_session:
-            artifact_dir = self.sessions_dir / safe_session / "artifacts" / "tools"
-            artifact_ref = f"tools/{tool_call_id or uuid.uuid4().hex[:8]}.txt"
-            path = self.sessions_dir / safe_session / "artifacts" / artifact_ref
+        if session_id:
+            if not is_safe_session_id(session_id):
+                raise ValueError("invalid session_id")
+            workspace = LocalWorkspacePort(self.sessions_dir)
+            directory = workspace.resolve(
+                session_storage_path(workspace.root, session_id)
+            )
+            artifact_dir = workspace.resolve(directory / "artifacts" / "tools")
+            # Providers can reuse call IDs across rounds. Each publication needs
+            # its own identity so older event references never change content.
+            path = artifact_dir / f"{uuid.uuid4().hex}.txt"
+            artifact_ref = f"tools/{path.name}"
             artifact_dir.mkdir(parents=True, exist_ok=True)
-            path.write_text(content, encoding="utf-8")
+            path.write_text(content, encoding="utf-8", newline="")
             return path, artifact_ref
 
         day_dir = self.output_dir / time.strftime("%Y-%m-%d")
@@ -180,12 +187,12 @@ class ToolOutputTruncationHook(TransformHook[AfterToolExecuteContext]):
         )
         filename = f"{round_part}-{tool_name}-{uuid.uuid4().hex[:8]}.txt"
         path = day_dir / filename
-        path.write_text(content, encoding="utf-8")
+        path.write_text(content, encoding="utf-8", newline="")
         return path, None
 
     def _should_bypass_truncation(self, tool_name: str, arguments: dict) -> bool:
         return (
-            tool_name == "artifact_read"
+            tool_name in {"artifact_read", "history_read", "history_search"}
             or self._is_override_read(tool_name, arguments)
             or self._is_skills_markdown_read(tool_name, arguments)
         )

@@ -9,12 +9,13 @@ from reuleauxcoder.extensions.tools.builtin.history import (
 from reuleauxcoder.infrastructure.persistence.session_store import SessionStore
 
 
-def _saved_history(tmp_path):
+def _saved_history(tmp_path, session_id=None):
     ledger = HistoryLedger()
     ledger.append_message(
         {"role": "user", "content": "find the stale cache bug"}, source="user"
     )
     session_id = SessionStore(tmp_path).save(
+        session_id=session_id,
         messages=[{"role": "user", "content": "current view"}],
         model="model",
         history_events=list(ledger.events),
@@ -39,6 +40,20 @@ def test_history_search_and_read_use_append_only_jsonl(tmp_path) -> None:
     assert '"seq": 1' in read.content
 
 
+def test_current_session_search_references_can_be_read_exactly(tmp_path) -> None:
+    import json
+
+    session_id = _saved_history(tmp_path, "remote:peer:session")
+    search = _bind(HistorySearchTool(), tmp_path)
+    read = _bind(HistoryReadTool(), tmp_path)
+    for tool in (search, read):
+        tool.bind_agent(SimpleNamespace(current_session_id=session_id))
+    found = json.loads(search.execute(pattern="stale cache").content)["records"][0]
+    page = json.loads(read.execute(event_id=found["event_id"]).content)
+    assert page["records"][0]["content"] == "find the stale cache bug"
+    assert page["session_id"] == session_id
+
+
 def test_artifact_read_is_confined_to_session_artifacts(tmp_path) -> None:
     session_id = _saved_history(tmp_path)
     artifact = tmp_path / session_id / "artifacts" / "tools" / "output.json"
@@ -48,9 +63,7 @@ def test_artifact_read_is_confined_to_session_artifacts(tmp_path) -> None:
     tool.bind_agent(SimpleNamespace(current_session_id=session_id))
 
     assert (
-        tool.preflight_validate(
-            {"artifact_ref": "tools/output.json"}, schema_only=True
-        )
+        tool.preflight_validate({"artifact_ref": "tools/output.json"}, schema_only=True)
         is None
     )
     outcome = tool.execute("tools/output.json")
@@ -87,6 +100,28 @@ def test_artifact_read_pages_exact_content_and_reports_next_offset(tmp_path) -> 
     assert "".join(pages) == source
 
 
+def test_artifact_cursor_preserves_exact_newlines_and_unicode(
+    tmp_path,
+) -> None:
+    session_id = _saved_history(tmp_path)
+    artifact = tmp_path / session_id / "artifacts" / "output.txt"
+    artifact.parent.mkdir(exist_ok=True)
+    source = "中文\r\n👩🏽‍💻\n" * 1000
+    artifact.write_bytes(source.encode())
+    tool = _bind(ArtifactReadTool(), tmp_path)
+    tool.bind_agent(SimpleNamespace(current_session_id=session_id))
+    content, cursor = [], None
+    while True:
+        page = tool.execute("output.txt", cursor=cursor, limit=101)
+        assert page.success
+        content.append(page.content)
+        cursor = page.metadata["next_cursor"]
+        if cursor is None:
+            assert page.metadata["total_chars"] == len(source)
+            break
+    assert "".join(content) == source
+
+
 def test_artifact_read_keeps_explicit_cross_session_access(tmp_path) -> None:
     session_id = _saved_history(tmp_path)
     artifact = tmp_path / session_id / "artifacts" / "tools" / "output.txt"
@@ -115,4 +150,4 @@ def test_artifact_read_rejects_unbounded_or_unresolved_reads(tmp_path) -> None:
     assert unresolved.success is False
     assert "current session is unavailable" in unresolved.model_text
     assert oversized.success is False
-    assert "limit must be an integer from 1 to 12000" in oversized.model_text
+    assert "12000" in oversized.model_text

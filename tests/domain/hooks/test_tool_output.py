@@ -9,7 +9,15 @@ from reuleauxcoder.domain.agent.tool_outcome import (
 )
 from reuleauxcoder.domain.hooks.types import AfterToolExecuteContext, HookPoint
 from reuleauxcoder.domain.llm.models import ToolCall
-from reuleauxcoder.extensions.tools.builtin.history import ArtifactReadTool
+from reuleauxcoder.extensions.tools.builtin.history import (
+    ArtifactReadTool,
+    HistoryReadTool,
+    HistorySearchTool,
+)
+from reuleauxcoder.infrastructure.persistence.session_paths import (
+    session_path_component,
+)
+from reuleauxcoder.domain.history import HistoryLedger
 
 
 def _ctx(
@@ -155,18 +163,60 @@ def test_tool_output_archive_is_session_scoped_and_model_recoverable(
     )
     source = "\n".join(f"line-{index}" for index in range(20))
     ctx = _ctx("/tmp/output.log", source)
-    ctx.session_id = "session_test"
+    ctx.session_id = "remote:peer:session"
 
     out = hook.run(ctx)
 
     assert out.outcome is not None
     assert out.outcome.archive_reference is not None
-    assert out.outcome.archive_reference.path == "tools/1.txt"
+    artifact_ref = out.outcome.archive_reference.path
     assert out.outcome.archive_reference.checksum_sha256 is not None
     assert out.outcome.archive_reference.size_bytes == len(source.encode("utf-8"))
-    artifact = tmp_path / "session_test" / "artifacts" / "tools" / "1.txt"
-    assert artifact.read_text(encoding="utf-8") == source
-    assert 'artifact_read(artifact_ref="tools/1.txt")' in out.result
+    artifact = (
+        tmp_path / session_path_component(ctx.session_id) / "artifacts" / artifact_ref
+    )
+    assert artifact.read_bytes() == source.encode("utf-8")
+    assert f'artifact_read(artifact_ref="{artifact_ref}")' in out.result
+    reader = ArtifactReadTool()
+    reader._agent_config = SimpleNamespace(session_dir=str(tmp_path))
+    assert reader.execute(artifact_ref, session_id=ctx.session_id).content == source
+    # Reused provider call IDs must not overwrite the first outcome's archive.
+    again = _ctx("/tmp/output.log", source + "\nsecond result")
+    again.session_id = ctx.session_id
+    second = hook.run(again)
+    assert second.outcome.archive_reference.path != artifact_ref
+    assert reader.execute(artifact_ref, session_id=ctx.session_id).content == source
+
+
+def test_history_pages_keep_their_content_and_cursors_through_output_hooks(tmp_path):
+    ledger = HistoryLedger(
+        session_id="session", sink_path=tmp_path / "session" / "events.jsonl"
+    )
+    ledger.append_message(
+        {"role": "user", "content": "original text " * 3000}, source="user"
+    )
+    hook = ToolOutputTruncationHook(
+        max_chars=100, max_lines=2, store_full_output=True, sessions_dir=str(tmp_path)
+    )
+    for tool, arguments in (
+        (HistoryReadTool(), {}),
+        (HistorySearchTool(), {"pattern": "original"}),
+    ):
+        tool._agent_config = SimpleNamespace(session_dir=str(tmp_path))
+        tool.bind_agent(SimpleNamespace(current_session_id="session"))
+        outcome = tool.execute(**arguments)
+        assert len(outcome.model_text) > hook.max_chars
+        context = AfterToolExecuteContext(
+            hook_point=HookPoint.AFTER_TOOL_EXECUTE,
+            tool_call=ToolCall(id="query", name=tool.name, arguments=arguments),
+            outcome=outcome,
+            result=outcome.model_text,
+            session_id="session",
+        )
+        processed = hook.run(context)
+        assert processed.outcome is outcome
+        assert processed.result == outcome.model_text
+    assert not (tmp_path / "session" / "artifacts").exists()
 
 
 def test_archived_output_can_be_paged_without_recursive_archiving(

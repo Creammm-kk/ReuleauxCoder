@@ -10,6 +10,32 @@ from reuleauxcoder.extensions.command.builtin.thinking import SetEffortCommand
 from reuleauxcoder.infrastructure.rpc.peer import RpcError
 
 
+def test_history_rpc_uses_the_same_saved_records_and_generation(runtime, tmp_path):
+    from reuleauxcoder.infrastructure.persistence.session_store import SessionStore
+
+    ledger = runtime.agent.history_ledger
+    event = ledger.append_message(
+        {"role": "user", "content": "Find 原始内容"}, source="user", turn_id="turn_1"
+    )
+    SessionStore(tmp_path).save(
+        session_id="test-session",
+        messages=[],
+        model="test",
+        history_events=list(ledger.events),
+    )
+    reply = decode(
+        runtime.client.peer.request("history.search", {"pattern": "原始内容"})
+    )
+    assert reply["session_generation"] == runtime.agent.session_generation
+    found = reply["page"].records[0]
+    assert found.event_id == event.event_id
+    page = decode(
+        runtime.client.peer.request("history.read", {"event_id": found.event_id})
+    )["page"]
+    assert page.records[0].content == "Find 原始内容"
+    assert page.records[0].turn_id == "turn_1"
+
+
 def test_workspace_git_and_effective_modes_cross_rpc(runtime, tmp_path):
     import subprocess
 

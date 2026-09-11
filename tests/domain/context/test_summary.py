@@ -194,3 +194,37 @@ def test_deterministic_summary_uses_ledger_provenance_and_control_facts() -> Non
         "sj_active: /tmp/worktree"
     ]
     assert document["provenance"]["source_checkpoint_ids"] == ["cp_previous"]
+    assert user_event.event_id in document["provenance"]["source_event_ids"]
+
+
+def test_summary_sources_resolve_exact_messages_and_cannot_be_invented(tmp_path):
+    from reuleauxcoder.infrastructure.persistence.history_query import SessionHistory
+
+    directory = tmp_path / "session"
+    directory.mkdir()
+    ledger = HistoryLedger(session_id="session", sink_path=directory / "events.jsonl")
+    messages = [
+        {"role": "user", "content": "shared prefix " * 100 + ending}
+        for ending in ("Windows Terminal", "VS Code Remote")
+    ]
+    events = [ledger.append_message(message, source="user") for message in messages]
+    enrichment = build_summary_document([])
+    enrichment["provenance"]["source_event_ids"] = ["invented-source"]
+    enrichment["user_intent"]["explicit_requests"] = [
+        {"text": "invented request", "event_ref": "invented-source"}
+    ]
+    document = json.loads(
+        generate_summary(
+            messages, history_events=ledger.events, llm=DummyLLM(json.dumps(enrichment))
+        )
+    )
+    references = [
+        request["event_ref"] for request in document["user_intent"]["explicit_requests"]
+    ]
+    assert references == [event.event_id for event in events]
+    assert "invented-source" not in document["provenance"]["source_event_ids"]
+    history = SessionHistory(tmp_path)
+    assert [
+        history.read("session", event_id=reference).records[0].content
+        for reference in references
+    ] == [message["content"] for message in messages]
