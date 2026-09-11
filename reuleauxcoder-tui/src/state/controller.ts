@@ -41,6 +41,7 @@ export class TuiController extends EventEmitter {
   private revision = 0;
   private updateTimer?: NodeJS.Timeout;
   private viewEpoch = 0;
+  private pendingView = Promise.resolve();
   private historyIndex: number | null = null;
   private historyDraft = editor();
   private refreshTimer?: NodeJS.Timeout;
@@ -48,7 +49,10 @@ export class TuiController extends EventEmitter {
   constructor(readonly client: RuntimeClient, readonly history = new InputHistory()) {
     super();
     this.session.on('change', this.changed);
-    this.session.on('view', (view, wire) => {void this.openView(view, wire).catch(this.fail);});
+    this.session.on('view', (view, wire) => {
+      const epoch = this.viewEpoch;
+      this.pendingView = this.pendingView.then(() => this.openView(view, wire, epoch)).catch(this.fail);
+    });
     client.on('initialized', info => {this.menus = menusFromCatalog(client.catalog); this.session.initialize(info);});
     client.on('state', state => this.session.update(state));
     client.on('event', (event, wire, generation) => {
@@ -126,9 +130,8 @@ export class TuiController extends EventEmitter {
     const preview = menu.actions.find(action => action.preview && action.parameters.every(parameter => !parameter.required));
     if (preview) await this.client.submitAction(preview.action_id, defaults(preview));
   }
-  private async openView(view: View, wire: Json | undefined) {
-    if (!wire || this.screen?.kind === 'form') return;
-    const epoch = this.viewEpoch;
+  private async openView(view: View, wire: Json | undefined, epoch: number) {
+    if (epoch !== this.viewEpoch || !wire || this.screen?.kind === 'form') return;
     const presentation = await this.client.panel(wire);
     if (epoch !== this.viewEpoch) return;
     const parent = this.screens.find(screen => screen.kind !== 'form' && screen.menu);
