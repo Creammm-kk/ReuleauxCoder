@@ -6,16 +6,19 @@ import {frameEdge, frameRow, paint} from './theme.js';
 /** Treat backend/user escape sequences as data. Styling is produced only here. */
 export const safe = (text: string) => text.replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, '').replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '').replace(/[\x00-\x08\x0b-\x1f\x7f-\x9f]/g, '');
 
-function inline(text: string): string {
-  return marked.Lexer.lexInline(safe(text)).map((token: any) => {
+function inline(tokens: Token[]): string {
+  return tokens.map((token: any) => {
     switch (token.type) {
-      case 'strong': return paint.bold(inline(token.text));
-      case 'em': return `\x1b[3m${inline(token.text)}\x1b[23m`;
+      case 'strong': return paint.bold(inline(token.tokens));
+      case 'em': return `\x1b[3m${inline(token.tokens)}\x1b[23m`;
       case 'codespan': return paint.accent(token.text);
-      case 'link': return `${inline(token.text)} ${paint.muted(`(${safe(token.href)})`)}`;
+      case 'link': {
+        const label = inline(token.tokens);
+        return token.autolink || token.text === token.href ? label : `${label} ${paint.muted(`(${safe(token.href)})`)}`;
+      }
       case 'image': return `[${token.text}] ${safe(token.href)}`;
       case 'br': return '\n';
-      default: return token.text ?? token.raw;
+      default: return token.tokens ? inline(token.tokens) : token.text ?? token.raw;
     }
   }).join('');
 }
@@ -24,15 +27,15 @@ export function markdown(text: string, width = 80): string {
   function render(tokens: Token[]): string {
     return tokens.map((token: any) => {
       switch (token.type) {
-        case 'heading': return paint.secondary(paint.bold(inline(token.text))) + '\n';
-        case 'paragraph': return inline(token.text) + '\n';
+        case 'heading': return paint.secondary(paint.bold(inline(token.tokens))) + '\n';
+        case 'paragraph': return inline(token.tokens) + '\n';
         case 'code': return [frameEdge(token.lang || 'code', width, false, paint.info), ...wrap(safe(token.text), width - 4).map(line => frameRow(line, width)), frameEdge('', width, true)].join('\n') + '\n';
         case 'blockquote': return render(token.tokens).split('\n').map(line => '│ ' + line).join('\n');
         case 'list': return token.items.map((item: any, index: number) => `${token.ordered ? `${index + (token.start || 1)}.` : '•'} ${item.task ? (item.checked ? '[✓] ' : '[ ] ') : ''}${render(item.tokens).trimEnd()}`).join('\n') + '\n';
-        case 'table': return [token.header.map((cell: any) => paint.bold(inline(cell.text))).join(' │ '), ...token.rows.map((row: any[]) => row.map(cell => inline(cell.text)).join(' │ '))].join('\n') + '\n';
+        case 'table': return [token.header.map((cell: any) => paint.bold(inline(cell.tokens))).join(' │ '), ...token.rows.map((row: any[]) => row.map(cell => inline(cell.tokens)).join(' │ '))].join('\n') + '\n';
         case 'hr': return '────────\n';
         case 'space': return '\n';
-        default: return inline(token.text ?? token.raw);
+        default: return inline([token]);
       }
     }).join('');
   }
