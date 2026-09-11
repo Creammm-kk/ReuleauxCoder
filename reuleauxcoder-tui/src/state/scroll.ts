@@ -16,7 +16,10 @@ export class ScrollMotion {
     if (from === target) return;
     this.scope = scope; this.target = target;
     const started = performance.now();
-    let last = from;
+    // A key or wheel event moves the first row immediately; easing handles the rest.
+    let last = from + Math.sign(target - from);
+    write(last); this.changed();
+    if (last === target) return;
     this.timer = setInterval(() => {
       // Navigation, resize and layout corrections invalidate the old row coordinates.
       if (!current() || read() !== last) {this.cancel(); return;}

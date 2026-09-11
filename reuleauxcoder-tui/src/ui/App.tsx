@@ -17,7 +17,8 @@ import {TextLayout} from './text-layout.js';
 const Rows = memo(function Rows({rows, height, width}: {rows: string[]; height: number; width: number}) {
   const text = Array.from({length: height}, (_, index) => paint.surface(fit(rows[index] || '', width))).join('\n');
   return <Box flexDirection="column" height={height} flexShrink={0}><Text wrap="truncate">{text}</Text></Box>;
-});
+}, (before, after) => before.width === after.width && before.height === after.height
+  && before.rows.length === after.rows.length && before.rows.every((row, index) => row === after.rows[index]));
 
 function ProcessSidebar({controller, width, height}: {controller: TuiController; width: number; height: number}) {
   const [now, setNow] = useState(Date.now);
@@ -98,6 +99,10 @@ export function App({controller: c, alternateScreen = false}: {controller: TuiCo
   const panelKind = c.active ? c.active.kind === 'review' || c.active.kind === 'confirm' ? 'REVIEW' : 'INPUT' : c.screen?.kind === 'document' ? 'DETAILS' : c.screen?.kind === 'form' ? 'CONFIGURE' : 'COMMANDS';
   const panelTransition = c.active ? `${c.active.request.request_id}:${c.interactionMode}`
     : `${c.screens.length}:${c.screen?.kind}:${c.screen?.title}:${c.screen?.kind === 'form' ? c.screen.index : ''}`;
+  const sidebar = useMemo(() => dimensions.sidebar > 0
+    ? <ProcessSidebar controller={c} height={bodyHeight} width={dimensions.sidebar}/> : null,
+  [c, bodyHeight, dimensions.sidebar, c.session.state, c.session.sidebarRevision, c.session.plan, c.session.progress,
+    c.session.git, c.session.fatal, c.active, liveActivity?.label]);
   return <Box flexDirection="column" paddingLeft={1} paddingRight={1} width={c.columns} height={height} overflowY="hidden">
     <Reveal key={c.session.fatal ? 'disconnected' : c.session.connected ? 'connected' : 'connecting'}>{progress =>
       <Rows rows={chrome.header.map(row => paint.reveal(row, progress))} height={chrome.header.length} width={dimensions.width}/>
@@ -114,7 +119,7 @@ export function App({controller: c, alternateScreen = false}: {controller: TuiCo
       </Box>
       {dimensions.sidebar > 0 && <>
         <Rows rows={Array.from({length: bodyHeight}, () => paint.border(' │ '))} height={bodyHeight} width={3}/>
-        <ProcessSidebar controller={c} height={bodyHeight} width={dimensions.sidebar}/>
+        {sidebar}
       </>}
     </Box>
     {queue.length > 0 && <Rows rows={queue} height={queue.length} width={dimensions.width}/>}

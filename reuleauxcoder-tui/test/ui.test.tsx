@@ -165,6 +165,7 @@ test('panel scrolling reuses wrapping while changed text and width invalidate it
 test('scroll bursts show intermediate rows, reverse immediately and yield to End or navigation', async t => {
   const c = new TuiController(new RuntimeClient(new RpcPeer(new PassThrough(), new PassThrough())));
   t.after(() => {c.client.peer.close(); c.dispose();});
+  c.resize(24, 100); // Match Ink's test terminal before measuring row coordinates.
   c.session.connected = true;
   c.session.add('assistant', 'Reuleaux', Array.from({length: 100}, (_, index) => `line ${index}`).join('\n'));
   const app = render(<App controller={c}/>); t.after(() => app.cleanup());
@@ -174,6 +175,7 @@ test('scroll bursts show intermediate rows, reverse immediately and yield to End
   const unsubscribe = c.subscribe(() => {if (c.offset !== null) positions.push(c.offset);});
   t.after(unsubscribe);
   await c.key('', {pageUp: true});
+  assert.equal(positions[0], bottom - 1, 'the first row is published with the key, without waiting for a timer');
   await c.key('', {pageUp: true});
   await until(() => c.offset === bottom - page * 2);
   assert(positions.some(row => row < bottom && row > bottom - page * 2), 'paging renders intermediate rows');

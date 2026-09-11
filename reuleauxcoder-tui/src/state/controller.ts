@@ -1,4 +1,5 @@
 import {EventEmitter} from 'node:events';
+import {isDeepStrictEqual} from 'node:util';
 import type {Key} from 'ink';
 import {RuntimeClient} from '../protocol/client.js';
 import {cancellation, record, typeOf, type Action, type Json, type Panel, type PanelItem, type PendingInteraction, type View} from '../protocol/wire.js';
@@ -46,7 +47,7 @@ export class TuiController extends EventEmitter {
   private historyIndex: number | null = null;
   private historyDraft = editor();
   private refreshTimer?: NodeJS.Timeout;
-  private scroll = new ScrollMotion(() => this.changed());
+  private scroll = new ScrollMotion(() => {this.revision++; this.flush();});
 
   constructor(readonly client: RuntimeClient, readonly history = new InputHistory()) {
     super();
@@ -82,8 +83,9 @@ export class TuiController extends EventEmitter {
   subscribe = (listener: () => void) => {this.on('change', listener); return () => {this.off('change', listener);};};
   changed = () => {
     this.revision++;
-    if (!this.updateTimer) this.updateTimer = setTimeout(() => {this.updateTimer = undefined; this.emit('change');}, 16);
+    if (!this.updateTimer) this.updateTimer = setTimeout(this.flush, 16);
   };
+  private flush = () => {clearTimeout(this.updateTimer); this.updateTimer = undefined; this.emit('change');};
   fail = (error: Error) => {this.status = error.message; this.session.notice(error.message, 'error');};
   get active(): PendingInteraction | undefined {return this.client.interactions[0];}
   get screen(): Screen | undefined {return this.screens.at(-1);}
@@ -96,15 +98,19 @@ export class TuiController extends EventEmitter {
 
   startRefresh() {
     let refreshing = false;
-    let gitRefreshing = false, nextGitRefresh = 0;
+    let gitRefreshing = false, nextGitRefresh = 0, lastStateRefresh = -Infinity;
     this.refreshTimer = setInterval(() => {
-      if (refreshing || !this.session.connected || this.closing) return;
-      refreshing = true;
-      void this.client.refresh().catch(error => {this.session.connected = false; this.session.fatal = error.message; this.fail(error);}).finally(() => {refreshing = false;});
+      if (!this.session.connected || this.closing) return;
+      const now = performance.now();
+      if (!refreshing && now - lastStateRefresh >= (this.session.state.running || this.active ? 500 : 5000)) {
+        refreshing = true;
+        lastStateRefresh = now;
+        void this.client.refresh().catch(error => {this.session.connected = false; this.session.fatal = error.message; this.fail(error);}).finally(() => {refreshing = false;});
+      }
       if (this.client.info.workspace_git && !gitRefreshing && performance.now() >= nextGitRefresh) {
         gitRefreshing = true;
         nextGitRefresh = performance.now() + 5000;
-        void this.client.git().then(git => {this.session.git = git; this.changed();})
+        void this.client.git().then(git => {if (!isDeepStrictEqual(this.session.git, git)) {this.session.git = git; this.changed();}})
           .catch(this.fail).finally(() => {gitRefreshing = false;});
       }
     }, 500);
@@ -261,11 +267,11 @@ export class TuiController extends EventEmitter {
       else if (input === 'a' && browser.current?.artifact_refs.length) {
         this.screens.push(this.list('History artifacts', browser.current.artifact_refs.map(artifact_ref => ({label: artifact_ref, description: 'Read archived content', select: () => this.showHistory('artifact', {artifact_ref, session_id: browser.page!.session_id})}))));
       } else if (key.upArrow || key.downArrow) {
-        if (browser.detailed) this.scrollBy(key.upArrow ? -1 : 1);
+        if (browser.detailed) {this.scrollBy(key.upArrow ? -1 : 1); return;}
         else browser.index = Math.max(0, Math.min((browser.page?.records.length ?? 1) - 1, browser.index + (key.upArrow ? -1 : 1)));
       } else if (key.pageUp || key.pageDown) {
         const delta = (key.pageUp ? -1 : 1) * this.viewportRows;
-        if (browser.detailed) this.scrollBy(delta);
+        if (browser.detailed) {this.scrollBy(delta); return;}
         else browser.index = Math.max(0, Math.min((browser.page?.records.length ?? 1) - 1, browser.index + Math.trunc(delta / 2)));
       }
       else if (key.home) browser.offset = 0;
@@ -291,7 +297,7 @@ export class TuiController extends EventEmitter {
     if (key.pageUp || key.pageDown) {
       const delta = (key.pageUp ? -1 : 1) * Math.max(1, this.viewportRows - 1);
       if (!this.active && this.screen?.kind === 'list') this.screen.index = Math.max(0, Math.min(this.listItems(this.screen).length - 1, this.screen.index + delta));
-      else this.scrollBy(delta);
+      else {this.scrollBy(delta); return;}
       this.changed(); return;
     }
     if (this.active) {this.interactionKey(input, key); this.changed(); return;}
@@ -311,7 +317,7 @@ export class TuiController extends EventEmitter {
         else {screen.filter = edit(screen.filter, input, key); screen.index = 0;}
       } else if (screen.kind === 'document') {
         if (key.tab && screen.menu) this.screens.push(this.list(screen.menu.title, this.actionItems(screen.menu), screen.menu));
-        else if (key.upArrow || key.downArrow) this.scrollBy(key.upArrow ? -1 : 1);
+        else if (key.upArrow || key.downArrow) {this.scrollBy(key.upArrow ? -1 : 1); return;}
         else if (key.home) screen.offset = 0;
         else if (key.end) screen.offset = Number.MAX_SAFE_INTEGER;
       } else if (screen.kind === 'history') return;
@@ -346,7 +352,7 @@ export class TuiController extends EventEmitter {
       }
     } else if (key.home && !this.composer.text) this.offset = 0;
     else if (key.end && !this.composer.text) this.offset = null;
-    else if ((key.upArrow || key.downArrow) && !key.meta && !this.composer.text && this.historyIndex === null) this.scrollBy(key.upArrow ? -3 : 3);
+    else if ((key.upArrow || key.downArrow) && !key.meta && !this.composer.text && this.historyIndex === null) {this.scrollBy(key.upArrow ? -3 : 3); return;}
     else if (key.upArrow || key.downArrow) {
       if (this.historyIndex === null) {this.historyDraft = this.composer; this.historyIndex = this.history.entries.length;}
       this.historyIndex = Math.max(0, Math.min(this.history.entries.length, this.historyIndex + (key.upArrow ? -1 : 1)));
