@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import os
 import re
+from pathlib import Path
 
 
 _ENCODED_PREFIX = "~rcsid-"
@@ -16,6 +17,14 @@ _WINDOWS_RESERVED_COMPONENTS = frozenset(
     | {f"com{index}" for index in range(1, 10)}
     | {f"lpt{index}" for index in range(1, 10)}
 )
+
+
+def is_safe_session_id(value: object) -> bool:
+    return (
+        isinstance(value, str)
+        and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}", value) is not None
+        and ".." not in value
+    )
 
 
 def session_path_component(session_id: str) -> str:
@@ -44,6 +53,24 @@ def session_path_candidates(session_id: str) -> tuple[str, ...]:
     if _ON_WINDOWS and not _is_windows_compatible_component(session_id):
         return (canonical,)
     return canonical, session_id
+
+
+def session_storage_path(root: Path, session_id: str, *, suffix: str = "") -> Path:
+    """Locate an already-validated identity, preserving legacy and broken paths.
+
+    Callers own confinement and error reporting; lstat preserves broken links
+    and inaccessible candidates so restoration cannot silently choose another file.
+    """
+    for component in session_path_candidates(session_id):
+        candidate = root / f"{component}{suffix}"
+        try:
+            candidate.lstat()
+        except FileNotFoundError:
+            continue
+        except OSError:
+            return candidate
+        return candidate
+    return root / f"{session_path_component(session_id)}{suffix}"
 
 
 def is_encoded_session_path_component(value: str) -> bool:

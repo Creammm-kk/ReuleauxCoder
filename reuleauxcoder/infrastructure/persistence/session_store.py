@@ -52,9 +52,9 @@ from reuleauxcoder.infrastructure.persistence.session_projection import (
     SessionProjectionSummary,
 )
 from reuleauxcoder.infrastructure.persistence.session_paths import (
+    is_safe_session_id,
     is_encoded_session_path_component,
-    session_path_candidates,
-    session_path_component,
+    session_storage_path,
 )
 
 DEFAULT_SESSION_FINGERPRINT = "local"
@@ -66,7 +66,6 @@ DEFAULT_SESSION_FINGERPRINT = "local"
 _SESSION_STORAGE_SCHEMA_VERSION = 2
 _MAX_REQUEST_RECORDS = 200
 _MAX_RESTORE_ISSUES = 8
-_MAX_SESSION_ID_CHARS = 128
 _MAX_MODEL_NAME_CHARS = 256
 _MAX_SAVED_AT_CHARS = 64
 _MAX_FINGERPRINT_CHARS = 256
@@ -139,15 +138,6 @@ def _is_bounded_runtime_text(value: object, *, max_chars: int) -> bool:
         isinstance(value, str)
         and len(value) <= max_chars
         and not any(unicodedata.category(char) in {"Cc", "Cf"} for char in value)
-    )
-
-
-def _is_safe_session_id(value: object) -> bool:
-    return (
-        isinstance(value, str)
-        and _is_bounded_safe_text(value, max_chars=_MAX_SESSION_ID_CHARS)
-        and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.:-]*", value) is not None
-        and ".." not in value
     )
 
 
@@ -1424,7 +1414,7 @@ class SessionStore:
                 continue
             manifest_path = entry / "manifest.json"
             if not (
-                _is_safe_session_id(entry.name)
+                is_safe_session_id(entry.name)
                 or is_encoded_session_path_component(entry.name)
             ):
                 canonical_keys.add(entry.name)
@@ -1492,9 +1482,7 @@ class SessionStore:
                     completion_tokens=_bounded_projection_count(
                         manifest.get("total_completion_tokens")
                     ),
-                    event_count=_bounded_projection_count(
-                        manifest.get("event_count")
-                    ),
+                    event_count=_bounded_projection_count(manifest.get("event_count")),
                     request_count=_bounded_projection_length(
                         manifest.get("request_ids")
                     ),
@@ -1630,29 +1618,11 @@ class SessionStore:
     def _get_session_path(self, session_id: str) -> Path:
         """Map session ID to JSON file path."""
         self._require_safe_session_id(session_id)
-        for component in session_path_candidates(session_id):
-            candidate = self._sessions_dir / f"{component}.json"
-            try:
-                candidate.lstat()
-            except FileNotFoundError:
-                continue
-            except OSError:
-                return candidate
-            return candidate
-        return self._sessions_dir / f"{session_path_component(session_id)}.json"
+        return session_storage_path(self._sessions_dir, session_id, suffix=".json")
 
     def _get_session_directory(self, session_id: str) -> Path:
         self._require_safe_session_id(session_id)
-        for component in session_path_candidates(session_id):
-            candidate = self._sessions_dir / component
-            try:
-                candidate.lstat()
-            except FileNotFoundError:
-                continue
-            except OSError:
-                return candidate
-            return candidate
-        return self._sessions_dir / session_path_component(session_id)
+        return session_storage_path(self._sessions_dir, session_id)
 
     def get_session_events_path(self, session_id: str) -> Path:
         """Resolve the durable ledger with the same injective ID policy."""
@@ -1669,7 +1639,7 @@ class SessionStore:
 
     @staticmethod
     def _require_safe_session_id(session_id: object) -> None:
-        if _is_safe_session_id(session_id):
+        if is_safe_session_id(session_id):
             return
         raise SessionRestoreError(
             phase="session_identity",
@@ -1690,7 +1660,7 @@ class SessionStore:
                 ref=ref,
             ) from None
         if (
-            not _is_safe_session_id(metadata.id)
+            not is_safe_session_id(metadata.id)
             or not _is_bounded_safe_text(
                 metadata.model,
                 max_chars=_MAX_MODEL_NAME_CHARS,
@@ -3184,10 +3154,7 @@ class SessionStore:
                         expected_session_id=expected_session_id,
                     )
                     event = HistoryEvent.from_dict(payload)
-                    if (
-                        event.event_id in seen_event_ids
-                        or event.seq <= previous_seq
-                    ):
+                    if event.event_id in seen_event_ids or event.seq <= previous_seq:
                         raise ValueError("history event ordering is invalid")
                     event, _ = self._compact_legacy_request_event(event)
                 except (
