@@ -678,9 +678,14 @@ class _AnthropicStream(Iterator[_Chunk]):
             raise ProviderProtocolError("anthropic", "error")
         if event_type == "message_start":
             usage = (event.get("message") or {}).get("usage") or {}
-            self._input_tokens = int(usage.get("input_tokens") or 0)
             cached = usage.get("cache_read_input_tokens")
             self._cache_read_input_tokens = int(cached) if cached is not None else None
+            # Normalize Anthropic's disjoint input buckets to the shared total-input contract.
+            self._input_tokens = (
+                int(usage.get("input_tokens") or 0)
+                + int(usage.get("cache_creation_input_tokens") or 0)
+                + (self._cache_read_input_tokens or 0)
+            )
             return self._usage_chunk()
         if event_type == "message_delta":
             usage = event.get("usage") or {}

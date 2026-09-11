@@ -51,6 +51,7 @@ def test_native_anthropic_adapter_satisfies_llm_contract_and_streams_text() -> N
                         "usage": {
                             "input_tokens": 12,
                             "cache_read_input_tokens": 4,
+                            "cache_creation_input_tokens": 5,
                         }
                     },
                 },
@@ -88,7 +89,7 @@ def test_native_anthropic_adapter_satisfies_llm_contract_and_streams_text() -> N
 
     assert response.content == "hello"
     assert response.reasoning_content == "plan"
-    assert response.prompt_tokens == 12
+    assert response.prompt_tokens == 21
     assert response.completion_tokens == 3
     assert response.cached_input_tokens == 4
     request = captured["request"]
