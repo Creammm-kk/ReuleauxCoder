@@ -173,6 +173,8 @@ Other command families include `/help`, `/model`, `/mode`, `/approval`, `/skills
 
 New sessions use a directory containing append-only `events.jsonl`, canonical `replay.json`, immutable `requests/`, `checkpoints/`, tool artifacts and a manifest; a lightweight JSON compatibility snapshot remains. Replay schema v3 includes wire-affecting request settings, exact hook-transformed provider payload hashes, and an aligned per-item ledger/checkpoint provenance vector that stays outside the provider payload. Resume preserves old base instructions and appends runtime/environment changes at the tail. Saved control state includes Plan/Progress revisions, actual usage observations and cache/checkpoint metadata.
 
+`infrastructure/persistence/history_query.py` provides shared bounded message/event/artifact reads for model tools and `history.read/search/artifact` RPC methods. `events.jsonl` remains authoritative; a disposable per-session SQLite index consumes append batches and stores text chunks. Queries default to the active session, expose stable event/turn references, continuation cursors, indexing progress and recovery gaps. Summaries reuse exact replay provenance rather than matching truncated text. TUI F2 → h reads/searches history on demand; the live transcript lays out visible blocks with a 6,000-row LRU cache and stable reading anchors. Runtime ledger and live transcript content remain in memory. See `docs/history-query.md` for budgets and recovery semantics.
+
 Session invariants:
 
 - inventory is newest-first and fingerprint-scoped by default;
