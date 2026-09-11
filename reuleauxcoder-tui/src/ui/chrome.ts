@@ -1,24 +1,16 @@
-import {useEffect, useState} from 'react';
 import type {TuiController} from '../state/controller.js';
 import {safe} from './format.js';
 import {between, fit, paint, type AccentRole} from './theme.js';
 import {statusLine} from './viewport.js';
+import {useMotion} from './motion.js';
 
 const compact = (text: string) => safe(text).replace(/\s+/g, ' ').trim();
 
 /** Play once per frontend mount, including when a small terminal hides the logo. */
 export function useLogoCollapse() {
-  const [hiddenRows, setHiddenRows] = useState(0);
-  useEffect(() => {
-    let rows = 0;
-    const collapse = () => {
-      setHiddenRows(++rows);
-      if (rows < 3) timer = setTimeout(collapse, 120);
-    };
-    let timer = setTimeout(collapse, 2000);
-    return () => clearTimeout(timer);
-  }, []);
-  return hiddenRows;
+  // Terminal rows are indivisible: only relayout when another row can be released.
+  const elapsed = useMotion(true, {delay: 1880, duration: 360, interval: 120});
+  return Math.floor(elapsed / 120);
 }
 
 /** Decorative rows yield to the conversation in short terminals. */

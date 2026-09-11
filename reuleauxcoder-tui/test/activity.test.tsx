@@ -20,19 +20,19 @@ test('composer motion keeps its geometry and stops for attention, idle and error
     <ComposerEdge label="YOU" detail="Enter send" width={70} focused phase={phase}/>;
   const app = render(edge('working')); t.after(() => app.cleanup());
   await until(() => app.frames.length >= 3);
-  const original = safe(app.frames[0]).replaceAll('━', '─');
-  assert(app.frames.every(frame => safe(frame).replaceAll('━', '─') === original));
+  const original = safe(app.frames[0]);
+  assert(app.frames.every(frame => safe(frame) === original), 'motion changes brightness, not border glyphs');
 
+  const working = app.lastFrame();
   app.rerender(edge('attention'));
-  await until(() => !app.lastFrame()?.includes('━'));
+  await until(() => app.lastFrame() !== working);
   const attentionFrames = app.frames.length;
   await delay(300);
   assert.equal(app.frames.length, attentionFrames, 'approval does not keep an animation timer running');
 
   app.rerender(edge('working'));
-  await until(() => app.lastFrame()?.includes('━'));
+  await until(() => app.frames.length > attentionFrames + 2);
   app.rerender(edge('idle'));
-  await until(() => !app.lastFrame()?.includes('━'));
   const start = app.frames.length;
   await until(() => app.frames.length > start + 2, 'idle border fades');
   await delay(800);

@@ -14,6 +14,7 @@ import {App} from './ui/App.js';
 import {safe} from './ui/format.js';
 import {configureTheme, DEFAULT_THEME, presets} from './ui/theme.js';
 import {loadTheme} from './ui/theme-config.js';
+import {RENDER_FPS} from './ui/motion.js';
 
 async function main() {
   const {values, positionals} = parseArgs({allowPositionals: true, options: {
@@ -50,10 +51,18 @@ async function main() {
     stderr += chunk;
     controller.session.notice(safe(chunk), 'backend');
   });
+  let lastRenderSample = -Infinity;
   const app = render(<App controller={controller} alternateScreen={!values['no-alt-screen']}/>, {
     alternateScreen: !values['no-alt-screen'], incrementalRendering: true,
-    exitOnCtrlC: false, maxFps: 30, interactive: true,
-    onRender: ({renderTime}) => {if (controller.session.connected && !peer.closed) client.recordPerformance(renderTime);},
+    exitOnCtrlC: false, maxFps: RENDER_FPS, interactive: true,
+    onRender: ({renderTime}) => {
+      // Sample render timings without sending an RPC for every animation frame.
+      const now = performance.now();
+      if (controller.session.connected && !peer.closed && now - lastRenderSample >= 1000) {
+        lastRenderSample = now;
+        client.recordPerformance(renderTime);
+      }
+    },
   });
   const terminate = () => {void controller.finish();};
   process.once('SIGTERM', terminate);
