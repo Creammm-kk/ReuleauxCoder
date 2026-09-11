@@ -15,6 +15,7 @@
     "build": "tsc -p tsconfig.json",
     "bundle": "node scripts/bundle.mjs",
     "check": "tsc --noEmit -p tsconfig.json",
+    "benchmark": "node --import tsx scripts/benchmark.tsx",
     "test": "npm run build && npm run bundle && node --import tsx --test test/*.test.ts*"
   },
   "dependencies": {

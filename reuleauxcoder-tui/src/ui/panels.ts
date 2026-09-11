@@ -5,6 +5,7 @@ import {diff, fields, safe, wrap} from './format.js';
 import {keyHint, paint} from './theme.js';
 import {inputRows, line, selectionRows} from './viewport.js';
 import {historyRows} from './history.js';
+import {TextLayout} from './text-layout.js';
 
 export interface PanelRows {title: string; rows: string[]; hint: string[]; navigation?: string}
 
@@ -17,7 +18,7 @@ export function hintRows(hints: string[], width: number): string[] {
   }
   return rows;
 }
-export function panelRows(c: TuiController, width: number, height: number): PanelRows | null {
+export function panelRows(c: TuiController, width: number, height: number, layout = new TextLayout()): PanelRows | null {
   if (c.active) {
     const {kind, request, expiresAt} = c.active;
     const waiting = Math.max(c.client.interactions.length - 1, c.session.state.approval_waiting);
@@ -34,14 +35,15 @@ export function panelRows(c: TuiController, width: number, height: number): Pane
       const intro = kind === 'choose_one' ? request.message : 'Allow matching requests for this session:';
       return {title, rows: [...(intro ? [line(paint.secondary(safe(intro)), width)] : []), ...selectionRows(items, c.interactionIndex, width, height - (intro ? 1 : 0))], hint: [keyHint('↑↓', 'select'), keyHint('Enter', 'confirm'), keyHint('Esc', 'back')]};
     }
-    const context = request.context;
-    const contextText = context ? [
-      [context.tool_name, context.tool_source, context.operation].filter(Boolean).join(' · '),
-      context.subjects.join('\n'), context.reason,
-      context.is_subagent ? `Subagent${context.subagent_mode ? ' · ' + context.subagent_mode : ''}${context.subagent_task ? '\n' + context.subagent_task : ''}` : '',
-    ].filter(Boolean).map(safe).join('\n') : '';
-    const sections = kind === 'confirm' ? safe(request.message) : [paint.secondary(safe(request.summary)), paint.info(contextText), ...request.sections.map((section: any) => `${paint.accent(paint.bold(safe(section.title ?? section.kind)))}\n${section.kind === 'diff' ? diff(section.content) : fields(section.content)}`)].filter(Boolean).join('\n\n');
-    const rows = wrap(sections, width);
+    const rows = layout.rows(request, width, () => {
+      const context = request.context;
+      const contextText = context ? [
+        [context.tool_name, context.tool_source, context.operation].filter(Boolean).join(' · '),
+        context.subjects.join('\n'), context.reason,
+        context.is_subagent ? `Subagent${context.subagent_mode ? ' · ' + context.subagent_mode : ''}${context.subagent_task ? '\n' + context.subagent_task : ''}` : '',
+      ].filter(Boolean).map(safe).join('\n') : '';
+      return kind === 'confirm' ? safe(request.message) : [paint.secondary(safe(request.summary)), paint.info(contextText), ...request.sections.map((section: any) => `${paint.accent(paint.bold(safe(section.title ?? section.kind)))}\n${section.kind === 'diff' ? diff(section.content) : fields(section.content)}`)].filter(Boolean).join('\n\n');
+    });
     c.interactionOffset = Math.min(c.interactionOffset, Math.max(0, rows.length - height));
     const hint = kind === 'confirm'
       ? [paint.action('y/Enter yes'), paint.error('n no'), keyHint('Esc', 'cancel')]
@@ -49,7 +51,7 @@ export function panelRows(c: TuiController, width: number, height: number): Pane
     return {title, rows: rows.slice(c.interactionOffset, c.interactionOffset + height), hint, navigation: `PgUp/PgDn ${c.interactionOffset + 1}/${rows.length}`};
   }
   const screen = c.screen;
-  if (screen?.kind === 'history') return historyRows(screen.browser, width, height);
+  if (screen?.kind === 'history') return historyRows(screen.browser, width, height, layout);
   if (screen?.kind === 'list') {
     const items = c.listItems(screen);
     screen.index = Math.min(screen.index, Math.max(0, items.length - 1));
@@ -57,10 +59,10 @@ export function panelRows(c: TuiController, width: number, height: number): Pane
     return {title: screen.title, rows: [...filter, ...selectionRows(items, screen.index, width, height - filter.length)], hint: [keyHint('↑↓', 'select'), keyHint('Enter', 'open'), keyHint('Esc', 'back')], navigation: `${items.length ? screen.index + 1 : 0}/${items.length}`};
   }
   if (screen?.kind === 'document') {
-    const rows = wrap(safe(screen.body).split('\n').map(row => {
+    const rows = layout.rows(screen.body, width, () => safe(screen.body).split('\n').map(row => {
       const separator = row.indexOf(': ');
       return separator >= 0 ? paint.info(row.slice(0, separator + 1)) + row.slice(separator + 1) : row;
-    }).join('\n'), width);
+    }).join('\n'));
     screen.offset = Math.min(screen.offset, Math.max(0, rows.length - height));
     return {title: screen.title, rows: rows.slice(screen.offset, screen.offset + height), hint: [...(screen.title === 'Session details' && c.client.info.history_query ? [keyHint('h', 'browse / search history')] : []), keyHint('↑↓ / PgUp/PgDn', 'scroll', paint.info), keyHint('Esc', 'back'), ...(screen.menu ? [keyHint('Tab', 'actions')] : [])], navigation: `${screen.offset + 1}/${rows.length}`};
   }

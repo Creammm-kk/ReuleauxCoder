@@ -1,10 +1,11 @@
 import type {HistoryBrowser} from '../state/history-browser.js';
 import type {PanelRows} from './panels.js';
-import {safe, wrap} from './format.js';
+import {safe} from './format.js';
 import {inputRows, selectionRows} from './viewport.js';
 import {keyHint, paint} from './theme.js';
+import {TextLayout} from './text-layout.js';
 
-export function historyRows(browser: HistoryBrowser, width: number, height: number): PanelRows {
+export function historyRows(browser: HistoryBrowser, width: number, height: number, layout = new TextLayout()): PanelRows {
   const page = browser.page;
   const progress = page && page.indexed_bytes < page.source_bytes
     ? `Index ${page.indexed_bytes}/${page.source_bytes} bytes${page.awaiting_tail ? ' · awaiting complete record' : ''}` : '';
@@ -20,7 +21,7 @@ export function historyRows(browser: HistoryBrowser, width: number, height: numb
     const offset = artifact?.offset ?? record?.offset ?? 0;
     const total = artifact?.total_chars ?? record?.total_chars;
     const metadata = [record && `${record.role ?? record.kind} · seq ${record.seq}${record.turn_id ? ' · ' + record.turn_id : ''}`, `Chars ${offset}–${offset + body.length}${total == null ? '' : '/' + total}`].filter(Boolean).join('\n');
-    rows = wrap(paint.info(safe(metadata)) + '\n\n' + safe(body), width);
+    rows = layout.rows(artifact ?? record, width, () => paint.info(safe(metadata)) + '\n\n' + safe(body));
     browser.offset = Math.min(browser.offset, Math.max(0, rows.length - Math.max(1, height - header.length)));
     rows = rows.slice(browser.offset, browser.offset + height - header.length);
   } else {

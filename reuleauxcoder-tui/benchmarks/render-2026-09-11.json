@@ -1,0 +1,137 @@
+{
+  "before": {
+    "label": "before-render-optimization",
+    "node": "v24.16.0",
+    "platform": "linux",
+    "cpu": "Intel(R) Xeon(R) CPU Max 9470C",
+    "terminal": {
+      "columns": 160,
+      "rows": 40
+    },
+    "motion_fps": 60,
+    "render_limit_fps": 75,
+    "results": [
+      {
+        "name": "10000-message-scroll",
+        "samples": 240,
+        "p50_ms": 0.01,
+        "p95_ms": 0.13,
+        "max_ms": 4.71,
+        "cold_ms": 42.89,
+        "initial_blocks": 3,
+        "measured_blocks": 27,
+        "cached_rows": 378,
+        "source_chars": 1228890
+      },
+      {
+        "name": "large-message-scroll",
+        "samples": 240,
+        "p50_ms": 0,
+        "p95_ms": 0,
+        "max_ms": 2.11,
+        "cold_ms": 13.91,
+        "initial_blocks": 1,
+        "measured_blocks": 2,
+        "cached_rows": 497,
+        "source_chars": 2400000
+      },
+      {
+        "name": "5000-line-panel-scroll",
+        "samples": 120,
+        "p50_ms": 49.53,
+        "p95_ms": 61.91,
+        "max_ms": 76.33,
+        "cold_ms": 70.4,
+        "source_chars": 327779
+      },
+      {
+        "name": "ink-busy",
+        "duration_ms": 2499.83,
+        "output_fps": 37.6,
+        "frame_p50_ms": 27.56,
+        "frame_p95_ms": 30.42,
+        "ink_render_p95_ms": 11.22,
+        "cpu_percent_one_core": 56.21,
+        "output_kib_per_second": 48.76
+      },
+      {
+        "name": "ink-panel-scroll",
+        "duration_ms": 2542.07,
+        "output_fps": 9.44,
+        "frame_p50_ms": 77.51,
+        "frame_p95_ms": 157.92,
+        "ink_render_p95_ms": 13.83,
+        "cpu_percent_one_core": 87.02,
+        "output_kib_per_second": 55.48
+      }
+    ]
+  },
+  "after": {
+    "label": "optimized",
+    "node": "v24.16.0",
+    "platform": "linux",
+    "cpu": "Intel(R) Xeon(R) CPU Max 9470C",
+    "terminal": {
+      "columns": 160,
+      "rows": 40
+    },
+    "motion_fps": 60,
+    "render_limit_fps": 120,
+    "results": [
+      {
+        "name": "10000-message-scroll",
+        "samples": 240,
+        "p50_ms": 0.01,
+        "p95_ms": 0.13,
+        "max_ms": 3.48,
+        "cold_ms": 45.44,
+        "initial_blocks": 3,
+        "measured_blocks": 27,
+        "cached_rows": 378,
+        "source_chars": 1228890
+      },
+      {
+        "name": "large-message-scroll",
+        "samples": 240,
+        "p50_ms": 0,
+        "p95_ms": 0,
+        "max_ms": 2.15,
+        "cold_ms": 14.05,
+        "initial_blocks": 1,
+        "measured_blocks": 2,
+        "cached_rows": 497,
+        "source_chars": 2400000
+      },
+      {
+        "name": "5000-line-panel-scroll",
+        "samples": 120,
+        "p50_ms": 0,
+        "p95_ms": 0.01,
+        "max_ms": 0.08,
+        "cold_ms": 64.59,
+        "source_chars": 327779,
+        "layouts": 1
+      },
+      {
+        "name": "ink-busy",
+        "duration_ms": 2506.18,
+        "output_fps": 59.85,
+        "frame_p50_ms": 16.89,
+        "frame_p95_ms": 20.22,
+        "ink_render_p95_ms": 7.56,
+        "cpu_percent_one_core": 62.2,
+        "output_kib_per_second": 75.44
+      },
+      {
+        "name": "ink-panel-scroll",
+        "duration_ms": 2500.84,
+        "output_fps": 17.59,
+        "frame_p50_ms": 32.25,
+        "frame_p95_ms": 100.3,
+        "ink_render_p95_ms": 8.81,
+        "cpu_percent_one_core": 47.27,
+        "output_kib_per_second": 103.4
+      }
+    ]
+  }
+}

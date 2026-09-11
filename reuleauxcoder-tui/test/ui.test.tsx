@@ -12,6 +12,7 @@ import {App} from '../src/ui/App.js';
 import {inputRows, TranscriptLayout} from '../src/ui/viewport.js';
 import {markdown, safe} from '../src/ui/format.js';
 import {panelRows} from '../src/ui/panels.js';
+import {TextLayout} from '../src/ui/text-layout.js';
 import {sidebarRows} from '../src/ui/sidebar.js';
 import {paint} from '../src/ui/theme.js';
 import stringWidth from 'string-width';
@@ -139,6 +140,26 @@ test('scrolling to the bottom restores shortcuts and follows subsequent output',
   await until(() => app.lastFrame()?.includes('History '));
   c.resize(100, 80);
   await until(() => c.offset === null && !app.lastFrame()?.includes('History '));
+});
+
+test('panel scrolling reuses wrapping while changed text and width invalidate it', t => {
+  const c = new TuiController(new RuntimeClient(new RpcPeer(new PassThrough(), new PassThrough())));
+  t.after(() => {c.client.peer.close(); c.dispose();});
+  c.document('Details', Array.from({length: 100}, (_, index) => `Field ${index}: 中文 detail`).join('\n'));
+  const document = c.screen;
+  assert(document?.kind === 'document');
+  const layout = new TextLayout();
+  for (let offset = 0; offset < 30; offset++) {
+    document.offset = offset;
+    assert(safe(panelRows(c, 80, 10, layout)!.rows[0]).includes(`Field ${offset}:`));
+  }
+  assert.equal(layout.measurements, 1);
+  document.body = 'Changed: ' + '中文 '.repeat(40);
+  assert(safe(panelRows(c, 80, 10, layout)!.rows[0]).includes('Changed:'));
+  assert.equal(layout.measurements, 2);
+  const narrower = panelRows(c, 30, 10, layout)!;
+  assert.equal(layout.measurements, 3);
+  assert(narrower.rows.every(row => stringWidth(row) <= 30));
 });
 
 test('scroll bursts show intermediate rows, reverse immediately and yield to End or navigation', async t => {

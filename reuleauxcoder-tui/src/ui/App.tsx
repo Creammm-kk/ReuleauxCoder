@@ -1,4 +1,4 @@
-import React, {useEffect, useMemo, useState, useSyncExternalStore} from 'react';
+import React, {memo, useEffect, useMemo, useState, useSyncExternalStore} from 'react';
 import {Box, Text, useApp, useInput, usePaste, useStdout} from 'ink';
 import type {TuiController} from '../state/controller.js';
 import {safe} from './format.js';
@@ -12,10 +12,12 @@ import {sidebarRows, workbenchLayout} from './sidebar.js';
 import {consoleChrome, useLogoCollapse} from './chrome.js';
 import {ComposerEdge} from './composer-edge.js';
 import {Reveal} from './reveal.js';
+import {TextLayout} from './text-layout.js';
 
-function Rows({rows, height, width}: {rows: string[]; height: number; width: number}) {
-  return <Box flexDirection="column" height={height} flexShrink={0}>{Array.from({length: height}, (_, index) => <Text key={index} wrap="truncate">{paint.surface(fit(rows[index] || '', width))}</Text>)}</Box>;
-}
+const Rows = memo(function Rows({rows, height, width}: {rows: string[]; height: number; width: number}) {
+  const text = Array.from({length: height}, (_, index) => paint.surface(fit(rows[index] || '', width))).join('\n');
+  return <Box flexDirection="column" height={height} flexShrink={0}><Text wrap="truncate">{text}</Text></Box>;
+});
 
 function ProcessSidebar({controller, width, height}: {controller: TuiController; width: number; height: number}) {
   const [now, setNow] = useState(Date.now);
@@ -33,6 +35,7 @@ export function App({controller: c, alternateScreen = false}: {controller: TuiCo
   const {stdout} = useStdout();
   const {exit} = useApp();
   const layout = useMemo(() => new TranscriptLayout(), []);
+  const panelLayout = useMemo(() => new TextLayout(), [c.active, c.screen]);
   const hiddenLogoRows = useLogoCollapse();
   useEffect(() => {
     const resize = () => c.resize(stdout.rows || 24, stdout.columns || 80);
@@ -64,7 +67,7 @@ export function App({controller: c, alternateScreen = false}: {controller: TuiCo
   const listLength = c.screen?.kind === 'list' ? c.listItems(c.screen).length : c.palette.length;
   const desiredPanelHeight = c.screen?.kind === 'history' ? available : c.active || c.screen?.kind === 'document' || c.screen?.kind === 'form' ? 18 : Math.min(18, listLength * (panelWidth >= 45 ? 2 : 1) + (c.screen ? 1 : 0));
   const panelCapacity = hasPanel ? Math.max(1, Math.min(desiredPanelHeight, available - (c.active ? 1 : 4) - panelHintBudget)) : 0;
-  const panel = hasPanel ? panelRows(c, panelWidth, panelCapacity) : null;
+  const panel = hasPanel ? panelRows(c, panelWidth, panelCapacity, panelLayout) : null;
   const panelHeight = panel ? Math.max(1, Math.min(panelCapacity, panel.rows.length)) : 0;
   const panelHints = panel ? hintRows(panel.hint, panelWidth).slice(0, panelHintBudget) : [];
   const transcriptHeight = Math.max(0, available - (panel ? panelHeight + 1 + panelHints.length : 0));
@@ -95,7 +98,7 @@ export function App({controller: c, alternateScreen = false}: {controller: TuiCo
   const panelKind = c.active ? c.active.kind === 'review' || c.active.kind === 'confirm' ? 'REVIEW' : 'INPUT' : c.screen?.kind === 'document' ? 'DETAILS' : c.screen?.kind === 'form' ? 'CONFIGURE' : 'COMMANDS';
   const panelTransition = c.active ? `${c.active.request.request_id}:${c.interactionMode}`
     : `${c.screens.length}:${c.screen?.kind}:${c.screen?.title}:${c.screen?.kind === 'form' ? c.screen.index : ''}`;
-  return <Box flexDirection="column" paddingLeft={1} paddingRight={1} width={c.columns} height={height} overflow="hidden">
+  return <Box flexDirection="column" paddingLeft={1} paddingRight={1} width={c.columns} height={height} overflowY="hidden">
     <Reveal key={c.session.fatal ? 'disconnected' : c.session.connected ? 'connected' : 'connecting'}>{progress =>
       <Rows rows={chrome.header.map(row => paint.reveal(row, progress))} height={chrome.header.length} width={dimensions.width}/>
     }</Reveal>
