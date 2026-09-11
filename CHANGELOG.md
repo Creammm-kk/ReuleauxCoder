@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 0.9.2 - 2026-09-11
+
+- Added persistent session goals with shared CLI/TUI controls, model-facing create/read/complete tools, automatic continuation, user-input priority, pause/resume and recovery across restarts and compaction.
+- Defaulted goal budgets to unlimited. Optional cumulative limits count input minus cached input plus output across main, summary and goal-owned subagent requests; estimated usage is labelled and budget exhaustion allows a final wrap-up.
+- Unified bounded session-history search, message/event reads and artifact pagination over a rebuildable index, with stable source references preserved through compaction.
+- Added paged history browsing/search in the TUI and bounded transcript layout caching for long sessions. The sidebar now displays goal status, objective and usage.
+- Corrected Anthropic input accounting to include cache creation and reads before applying the shared cache deduction, and highlighted Node installation guidance when the launcher falls back to the CLI.
+
 ## 0.9.0 - 2026-09-10
 
 - Migrated chat, slash commands and approvals to a shared bidirectional JSON-RPC runtime, with command-owned panels and typed actions for independent frontends.
