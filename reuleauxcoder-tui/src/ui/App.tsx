@@ -10,6 +10,8 @@ import {activityFor, ActivityLine} from './activity.js';
 import {queuedRows} from './queued.js';
 import {sidebarRows, workbenchLayout} from './sidebar.js';
 import {consoleChrome, useLogoCollapse} from './chrome.js';
+import {ComposerEdge} from './composer-edge.js';
+import {Reveal} from './reveal.js';
 
 function Rows({rows, height, width}: {rows: string[]; height: number; width: number}) {
   return <Box flexDirection="column" height={height} flexShrink={0}>{Array.from({length: height}, (_, index) => <Text key={index} wrap="truncate">{paint.surface(fit(rows[index] || '', width))}</Text>)}</Box>;
@@ -90,17 +92,21 @@ export function App({controller: c, alternateScreen = false}: {controller: TuiCo
   ];
   const emptyRows = [...Array.from({length: Math.max(0, Math.floor((transcriptHeight - welcome.length) / 3))}, () => ''), ...welcome];
   const panelKind = c.active ? c.active.kind === 'review' || c.active.kind === 'confirm' ? 'REVIEW' : 'INPUT' : c.screen?.kind === 'document' ? 'DETAILS' : c.screen?.kind === 'form' ? 'CONFIGURE' : 'COMMANDS';
+  const panelTransition = c.active ? `${c.active.request.request_id}:${c.interactionMode}`
+    : `${c.screens.length}:${c.screen?.kind}:${c.screen?.title}:${c.screen?.kind === 'form' ? c.screen.index : ''}`;
   return <Box flexDirection="column" paddingLeft={1} paddingRight={1} width={c.columns} height={height} overflow="hidden">
-    <Rows rows={chrome.header} height={chrome.header.length} width={dimensions.width}/>
+    <Reveal key={c.session.fatal ? 'disconnected' : c.session.connected ? 'connected' : 'connecting'}>{progress =>
+      <Rows rows={chrome.header.map(row => paint.reveal(row, progress))} height={chrome.header.length} width={dimensions.width}/>
+    }</Reveal>
     <Box flexDirection="row" height={bodyHeight} flexShrink={0}>
       <Box flexDirection="column" width={width} flexShrink={0}>
         <Rows rows={transcript.rows.length ? transcript.rows : emptyRows} height={transcriptHeight} width={width}/>
         {liveActivity && <ActivityLine key={liveActivity.label} {...liveActivity} width={width}/>}
-        {panel && <>
-          <Rows rows={[paint.panel(between(paint.badge(panelKind, c.active ? 'warning' : 'accent') + ' ' + paint.secondary(safe(panel.title)), paint.info(panel.navigation || ''), width))]} height={1} width={width}/>
-          <Rows rows={Array.from({length: panelHeight}, (_, index) => rail(panel.rows[index] || '', width, panelColor))} height={panelHeight} width={width}/>
+        {panel && <Reveal key={panelTransition}>{progress => <>
+          <Rows rows={[paint.reveal(paint.panel(between(paint.badge(panelKind, c.active ? 'warning' : 'accent') + ' ' + paint.secondary(safe(panel.title)), paint.info(panel.navigation || ''), width)), progress)]} height={1} width={width}/>
+          <Rows rows={Array.from({length: panelHeight}, (_, index) => paint.reveal(rail(panel.rows[index] || '', width, panelColor), progress))} height={panelHeight} width={width}/>
           <Rows rows={panelHints.map(hint => rail(hint, width, panelColor))} height={panelHints.length} width={width}/>
-        </>}
+        </>}</Reveal>}
       </Box>
       {dimensions.sidebar > 0 && <>
         <Rows rows={Array.from({length: bodyHeight}, () => paint.border(' │ '))} height={bodyHeight} width={3}/>
@@ -108,7 +114,9 @@ export function App({controller: c, alternateScreen = false}: {controller: TuiCo
       </>}
     </Box>
     {queue.length > 0 && <Rows rows={queue} height={queue.length} width={dimensions.width}/>}
-    <Rows rows={[frameEdge(focused ? state.running ? 'YOU / STEERING' : 'YOU' : 'DRAFT', dimensions.width, false, inputColor, composerAction)]} height={1} width={dimensions.width}/>
+    <ComposerEdge label={focused ? state.running ? 'YOU / STEERING' : 'YOU' : 'DRAFT'} detail={composerAction}
+      width={dimensions.width} focused={focused}
+      phase={c.session.fatal ? 'error' : c.active || state.approval_waiting ? 'attention' : liveActivity?.moving ? 'working' : 'idle'}/>
     <Rows rows={composer} height={composerHeight} width={dimensions.width}/>
     <Rows rows={[frameEdge(composerHint, dimensions.width, true, paint.muted)]} height={1} width={dimensions.width}/>
     <Rows rows={[footer, ...(chrome.status ? [chrome.status] : [])]} height={footerHeight} width={dimensions.width}/>

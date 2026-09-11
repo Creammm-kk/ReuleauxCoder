@@ -106,6 +106,8 @@ The independent React TUI lives in `reuleauxcoder-tui/`. Its protocol client own
 
 The default TUI workbench theme uses amber controls, sage activity and blue metadata. Wide terminals show a height-budgeted sidebar: attention, execution, plan and Git summaries precede session and activity details. Git facts come from the backend's `runtime.git` RPC every five seconds, using the existing bounded Git executor without consuming model-facing HEAD-change notices. F2 retains the full received snapshot; local upstream counts do not trigger network fetches. Approval actions wrap as whole items and paging information stays in the panel header.
 
+TUI motion stays local to the affected React surface: startup and panel transitions brighten briefly without delaying input, and the composer rule animates during work then fades when idle. Approval controls remain stable; animation ticks do not modify controller state or transcript layout. Effects use existing theme colors and require no terminal shader.
+
 The CLI is split by responsibility:
 
 - `interfaces/cli/repl.py`: JSON-RPC submission, interaction handoff and session lifecycle.

@@ -89,7 +89,30 @@ function surface(text: string, foregroundColor: string, backgroundColor: string)
   return fg + bg + text.replaceAll('\x1b[39m', fg).replaceAll('\x1b[49m', bg).replaceAll('\x1b[0m', '\x1b[0m' + fg + bg) + '\x1b[39m\x1b[49m';
 }
 const badge = (text: string, role: AccentRole = 'accent') => surface(` ${text} `, current.background === 'default' ? 'black' : current.background, current[role]);
+/** Shade a border with the active theme; named ANSI colors use discrete levels. */
+function borderGlow(text: string, role: AccentRole, strength: number): string {
+  const from = current.border, to = current[role];
+  if (strength <= 0) return foreground('border', text);
+  if (!from.startsWith('#') || !to.startsWith('#')) {
+    const colored = foreground(role, text);
+    return strength < 0.65 ? `\x1b[2m${colored}\x1b[22m` : colored;
+  }
+  const rgb = [1, 3, 5].map(offset => {
+    const start = parseInt(from.slice(offset, offset + 2), 16);
+    const end = parseInt(to.slice(offset, offset + 2), 16);
+    return Math.round(start + (end - start) * strength);
+  });
+  return `\x1b[38;2;${rgb.join(';')}m${text}\x1b[39m`;
+}
 export const paint = {
+  borderGlow,
+  // Only brighten existing truecolor foregrounds. Preserve backgrounds, dark
+  // badge text and ANSI palette colors; content is fully present from frame one.
+  reveal: (text: string, progress: number) => text.replace(/\x1b\[38;2;(\d+);(\d+);(\d+)m/g, (code, r, g, b) => {
+    const rgb = [Number(r), Number(g), Number(b)];
+    if (Math.max(...rgb) < 140 || progress === 1) return code;
+    return `\x1b[38;2;${rgb.map(value => Math.round(value * (0.78 + 0.22 * progress))).join(';')}m`;
+  }),
   dim: (text: string) => `\x1b[2m${text.replaceAll('\x1b[22m', '\x1b[22m\x1b[2m')}\x1b[22m`,
   muted: (text: string) => current.muted === 'default' ? `\x1b[2m${text}\x1b[22m` : foreground('muted', text),
   bold: (text: string) => `\x1b[1m${text}\x1b[22m`,
@@ -119,16 +142,16 @@ export function between(left: string, right: string, width: number): string {
   return remaining > 0 ? fit(left, remaining) + '  ' + right : fit(right, width);
 }
 
-export function section(label: string, detail: string, width: number, color = paint.accent): string {
+export function section(label: string, detail: string, width: number, color = paint.accent, ruleColor = paint.border): string {
   const heading = label ? sliceAnsi(`─ ${label} `, 0, Math.max(0, width - 2)) : '';
   const available = Math.max(0, width - stringWidth(heading) - 3);
   const caption = sliceAnsi(detail, 0, available);
   const rule = '─'.repeat(Math.max(0, width - stringWidth(heading) - stringWidth(caption) - (caption ? 1 : 0)));
-  return color(heading) + paint.border(rule) + (caption ? paint.muted(' ' + caption) : '');
+  return color(heading) + ruleColor(rule) + (caption ? paint.muted(' ' + caption) : '');
 }
 
-export function frameEdge(label: string, width: number, bottom = false, color = paint.accent, detail = ''): string {
-  return paint.border(bottom ? '└' : '┌') + section(label, detail, width - 2, color) + paint.border(bottom ? '┘' : '┐');
+export function frameEdge(label: string, width: number, bottom = false, color = paint.accent, detail = '', ruleColor = paint.border): string {
+  return paint.border(bottom ? '└' : '┌') + section(label, detail, width - 2, color, ruleColor) + paint.border(bottom ? '┘' : '┐');
 }
 
 export function frameRow(text: string, width: number): string {

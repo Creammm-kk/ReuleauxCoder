@@ -159,7 +159,11 @@ test('workbench sidebar adapts to terminal size and preserves drafts and full se
   for (const [rows, columns] of [[45, 140], [34, 80], [33, 80], [24, 119], [24, 120], [20, 120], [12, 40], [32, 160]]) {
     const previous = app.lastFrame();
     c.resize(rows, columns);
-    await until(() => app.lastFrame() !== previous && app.lastFrame()?.split('\n').length === rows - 1);
+    await until(() => {
+      const frame = app.lastFrame();
+      const input = safe(frame || '').split('\n').find(row => row.includes('┌─ YOU'));
+      return frame !== previous && frame?.split('\n').length === rows - 1 && input && stringWidth(input.trim()) === columns - 2;
+    }, 'the rendered viewport reaches both the requested height and width');
     const frame = app.lastFrame()!;
     assert.equal(frame.includes('WORKBENCH'), columns >= 120 && rows >= 20);
     assert(frame.split('\n').length <= rows - 1);

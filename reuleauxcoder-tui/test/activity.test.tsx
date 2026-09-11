@@ -2,6 +2,7 @@ import React from 'react';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {PassThrough} from 'node:stream';
+import {setTimeout as delay} from 'node:timers/promises';
 import {render} from 'ink-testing-library';
 import {RpcPeer} from '../src/protocol/peer.js';
 import {RuntimeClient} from '../src/protocol/client.js';
@@ -9,9 +10,72 @@ import {decode, record, type Json} from '../src/protocol/wire.js';
 import {TuiController} from '../src/state/controller.js';
 import {App} from '../src/ui/App.js';
 import {activityFor} from '../src/ui/activity.js';
+import {ComposerEdge} from '../src/ui/composer-edge.js';
 import {editor} from '../src/state/editor.js';
 import {safe} from '../src/ui/format.js';
 import {until} from './helpers.js';
+
+test('composer motion keeps its geometry and stops for attention, idle and errors', async t => {
+  const edge = (phase: 'working' | 'attention' | 'idle' | 'error') =>
+    <ComposerEdge label="YOU" detail="Enter send" width={70} focused phase={phase}/>;
+  const app = render(edge('working')); t.after(() => app.cleanup());
+  await until(() => app.frames.length >= 3);
+  const original = safe(app.frames[0]).replaceAll('━', '─');
+  assert(app.frames.every(frame => safe(frame).replaceAll('━', '─') === original));
+
+  app.rerender(edge('attention'));
+  await until(() => !app.lastFrame()?.includes('━'));
+  const attentionFrames = app.frames.length;
+  await delay(300);
+  assert.equal(app.frames.length, attentionFrames, 'approval does not keep an animation timer running');
+
+  app.rerender(edge('working'));
+  await until(() => app.lastFrame()?.includes('━'));
+  app.rerender(edge('idle'));
+  await until(() => !app.lastFrame()?.includes('━'));
+  const start = app.frames.length;
+  await until(() => app.frames.length > start + 2, 'idle border fades');
+  await delay(800);
+  const settled = app.frames.length;
+  await delay(250);
+  assert.equal(app.frames.length, settled, 'idle stops rendering after the finite fade');
+  assert.equal(safe(app.lastFrame()!), original);
+
+  app.rerender(edge('error'));
+  await until(() => app.frames.length > settled);
+  const failed = app.frames.length;
+  await delay(250);
+  assert.equal(app.frames.length, failed);
+});
+
+test('panel entrances preserve content and drafts, remain interactive and do not replay on scroll', async t => {
+  const c = new TuiController(new RuntimeClient(new RpcPeer(new PassThrough(), new PassThrough())));
+  t.after(() => {c.client.peer.close(); c.dispose();});
+  c.session.connected = true;
+  c.composer = editor('保留草稿');
+  c.document('First panel', 'Immediately readable');
+  const app = render(<App controller={c}/>); t.after(() => app.cleanup());
+  await until(() => app.lastFrame()?.includes('Immediately readable'));
+  app.stdin.write('\x1b');
+  await until(() => !c.screen, 'Esc works during entrance');
+  c.document('Second panel', Array.from({length: 40}, (_, i) => `Detail ${i}`).join('\n'));
+  await until(() => app.lastFrame()?.includes('Second panel'));
+  const first = app.frames.length - 1;
+  const revision = c.snapshot();
+  await delay(400);
+  assert(app.frames.length > first + 1, 'the panel brightens over several frames');
+  assert.equal(c.snapshot(), revision, 'entrance does not update controller state');
+  assert(app.frames.slice(first).every(frame => frame.includes('Detail 0') && frame.includes('保留草稿')));
+  app.stdin.write('\x1b[B');
+  await until(() => c.screen?.kind === 'document' && c.screen.offset === 1);
+  await until(() => app.lastFrame()?.includes('Detail 1') && !app.lastFrame()?.includes('Detail 0\n'));
+  await delay(100);
+  const afterScroll = app.frames.length;
+  await delay(350);
+  assert.equal(app.frames.length, afterScroll, 'scroll does not restart entrance');
+  assert.equal(c.composer.text, '保留草稿');
+  assert.equal(c.session.cells.length, 0);
+});
 
 test('startup logo slides away once, returning rows to output without moving the composer', async t => {
   const c = new TuiController(new RuntimeClient(new RpcPeer(new PassThrough(), new PassThrough())));
