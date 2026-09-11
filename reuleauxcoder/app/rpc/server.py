@@ -101,7 +101,8 @@ class RuntimeServer:
         self._ready = False
         self._shutdown_lock = threading.Lock()
         self._shutdown_complete = False
-        self._revision = 0
+        self._snapshot: RuntimeSnapshot | None = None
+        self._published_revision = 0
         self._workers: set[threading.Thread] = set()
         self.interactions = InteractionCoordinator(RemoteInteractor(peer))
         commands.interactions = self.interactions
@@ -126,7 +127,7 @@ class RuntimeServer:
                 "runtime.report_issue": self.agent.record_runtime_issue,
                 "runtime.record_performance": self.record_performance,
                 "runtime.shutdown": self.shutdown,
-                "runtime.snapshot": lambda: encode(self.snapshot()),
+                "runtime.snapshot": self.snapshot_reply,
                 "runtime.git": self.git_snapshot,
                 "history.read": lambda **params: self.history_query("read", **params),
                 "history.search": lambda **params: self.history_query(
@@ -159,12 +160,12 @@ class RuntimeServer:
     def snapshot(self):
         agent = self.agent
         with self._lock:
-            self._revision += 1
+            revision = self._snapshot.revision if self._snapshot else 0
             manager = agent.mcp_manager
             context = agent.context
             review = self.interactions.adapter.review_request
-            return RuntimeSnapshot(
-                revision=self._revision,
+            state = RuntimeSnapshot(
+                revision=revision,
                 session_id=self.commands.session_id,
                 agent_id=agent.agent_id,
                 session_generation=agent.session_generation,
@@ -187,6 +188,13 @@ class RuntimeServer:
                 approval_policy=self.config.approval.default_mode,
                 goal=agent.goal_controller.state,
             )
+            if state != self._snapshot:
+                self._snapshot = replace(state, revision=revision + 1)
+            return self._snapshot
+
+    def snapshot_reply(self, known_revision=None):
+        state = self.snapshot()
+        return None if state.revision == known_revision else encode(state)
 
     def git_snapshot(self):
         monitor = self.agent.git_monitor
@@ -207,7 +215,11 @@ class RuntimeServer:
         return encode({"session_generation": generation, "page": page})
 
     def _publish_state(self):
-        state = self.snapshot()
+        with self._lock:
+            state = self.snapshot()
+            if state.revision <= self._published_revision:
+                return state
+            self._published_revision = state.revision
         self._notify("runtime.state", state=encode(state))
         return state
 
@@ -235,6 +247,7 @@ class RuntimeServer:
                 {
                     "version": 1,
                     "workspace_git": self.agent.git_monitor is not None,
+                    "conditional_snapshots": True,
                     "history_query": True,
                     "goals": True,
                     "catalog": self.commands.catalog,

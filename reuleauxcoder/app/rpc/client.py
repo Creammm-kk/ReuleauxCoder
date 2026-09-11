@@ -82,7 +82,14 @@ class RuntimeClient:
         self.peer.notify("runtime.resize", {"rows": rows, "columns": columns})
 
     def refresh(self):
-        self._state(decode(self.peer.request("runtime.snapshot", timeout=5)))
+        params = (
+            {"known_revision": self.state.revision}
+            if self.info.get("conditional_snapshots")
+            else {}
+        )
+        result = self.peer.request("runtime.snapshot", params, timeout=5)
+        if result is not None:
+            self._state(decode(result))
 
     def report_runtime_issue(self, phase, error_type, ref, count=1, **route):
         return self.peer.request(

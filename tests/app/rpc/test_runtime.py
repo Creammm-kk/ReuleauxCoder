@@ -10,6 +10,28 @@ from reuleauxcoder.extensions.command.builtin.thinking import SetEffortCommand
 from reuleauxcoder.infrastructure.rpc.peer import RpcError
 
 
+def test_snapshot_revision_tracks_changes_and_conditional_reads(runtime):
+    client = runtime.client
+    changes = []
+    client.on_state = changes.append
+    original = client.state
+    for _ in range(3):
+        client.refresh()
+        assert runtime.server.snapshot().revision == original.revision
+        assert client.peer.request(
+            "runtime.snapshot", {"known_revision": original.revision}
+        ) is None
+    assert changes == []
+    runtime.agent.llm.model = "changed-model"
+    client.refresh()
+    assert client.state.model == "changed-model"
+    assert client.state.revision == original.revision + 1
+    assert changes == [client.state]
+    assert decode(client.peer.request("runtime.snapshot")) == client.state
+    client._state(original)
+    assert client.state.model == "changed-model"
+
+
 def test_history_rpc_uses_the_same_saved_records_and_generation(runtime, tmp_path):
     from reuleauxcoder.infrastructure.persistence.session_store import SessionStore
 

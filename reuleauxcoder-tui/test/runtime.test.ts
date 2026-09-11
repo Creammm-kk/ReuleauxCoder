@@ -7,6 +7,22 @@ import {editor} from '../src/state/editor.js';
 import {panelRows} from '../src/ui/panels.js';
 import {TranscriptLayout} from '../src/ui/viewport.js';
 
+test('unchanged RPC refreshes preserve state identity and do not notify the UI', async t => {
+  const b = await backend(); t.after(() => b.close());
+  const {client} = b;
+  const original = client.state;
+  let updates = 0;
+  client.on('state', () => updates++);
+  for (let i = 0; i < 3; i++) await client.refresh();
+  assert.equal(client.state, original);
+  assert.equal(updates, 0);
+  await client.submit('wait');
+  assert(client.state.running);
+  assert(updates > 0, 'a real state change is still delivered');
+  await client.interrupt();
+  await until(() => !client.state.running);
+});
+
 test('Python catalog drives every command menu and typed parameter form', async t => {
   const b = await backend(); t.after(() => b.close());
   const {client, controller: c} = b;

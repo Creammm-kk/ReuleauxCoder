@@ -73,7 +73,10 @@ export class RuntimeClient extends EventEmitter {
   }
   submitAction(id: string, command: {[key: string]: Json} = {}) {return this.submit(actionRequest(id, command));}
   async panel(payload: Json) {return decode(await this.peer.request('view.panel', {payload}));}
-  async refresh() {this.update(decode(await this.peer.request('runtime.snapshot', {}, 5000)));}
+  async refresh() {
+    const state = await this.peer.request('runtime.snapshot', this.info?.conditional_snapshots ? {known_revision: this.state.revision} : {}, 5000);
+    if (state !== null) this.update(decode(state));
+  }
   async git(): Promise<GitWorkspace | null> {return decode(await this.peer.request('runtime.git', {}, 5000));}
   async history(operation: HistoryOperation, parameters: {[key: string]: Json}): Promise<{session_generation: number; page: HistoryPage | ArtifactPage}> {
     return decode(await this.peer.request(`history.${operation}`, parameters));
