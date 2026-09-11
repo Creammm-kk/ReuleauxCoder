@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## 0.9.3 - 2026-09-11
+
+- Prioritized scroll frames over event batching, added immediate first-row feedback, and reused stable sidebar/text surfaces. Reproducible Ink benchmarks now cover continuous panel and transcript scrolling, input latency, idle RPC traffic, and multi-megabyte streaming replies.
+- Shared the local animation scheduler across busy indicators, panel transitions and the startup logo, with theme-aware fading at the logo's disappearing edge. Animation cadence remains independent of backend events and performance reporting.
+- Incrementally split the tail of streaming replies and reasoning, retained bounded visible-row caches, and avoided repeated panel wrapping and full-history activity scans.
+- Suppressed unchanged runtime snapshots and Git redraws, added conditional snapshot reads for CLI/TUI clients, and reduced idle TUI polling while preserving event-driven updates.
+- Fixed recursive Markdown link rendering that could terminate the TUI with a stack overflow, and prevented stale asynchronous panel responses from overwriting newer state.
+- Isolated failure-recording errors so the original runtime failure remains available.
+
 ## 0.9.2 - 2026-09-11
 
 - Added persistent session goals with shared CLI/TUI controls, model-facing create/read/complete tools, automatic continuation, user-input priority, pause/resume and recovery across restarts and compaction.
