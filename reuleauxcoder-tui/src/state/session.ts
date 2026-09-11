@@ -99,7 +99,7 @@ export class SessionStore extends EventEmitter {
     switch (type) {
       case 'TurnStarted': case 'ChatStarted':
         this.assistant = this.reasoning = undefined;
-        this.add('user', 'You', p.user_input.replace(/^\[SESSION_RESUME\][^\n]*\n\n/, '')); break;
+        if (p.user_input) this.add('user', 'You', p.user_input.replace(/^\[SESSION_RESUME\][^\n]*\n\n/, '')); break;
       case 'AssistantContentDelta': case 'StreamChunk':
         if (p.reasoning) {this.appendReasoning(p); break;}
         this.finishCell(this.reasoning); this.reasoning = undefined;

@@ -29,6 +29,7 @@ export const actionRequest = (id: string, command: {[key: string]: Json} = {}): 
 export interface Parameter {name: string; kind: 'text' | 'integer' | 'boolean'; required: boolean; nullable: boolean; default: string | number | boolean | null}
 export interface Action {action_id: string; feature_id: string; description: string; preview: boolean; parameters: Parameter[]; triggers: {kind: string; value: string}[]}
 export interface RuntimeState {
+  goal?: Goal | null;
   revision: number; session_id: string | null; agent_id: string | null; session_generation: number;
   running: boolean; stopping: boolean; interrupt_pending: boolean;
   queued_commands: string[]; queued_steering: string[]; model: string;
@@ -36,6 +37,12 @@ export interface RuntimeState {
   mcp_state: string; workspace: string; exit_saved_session_id: string | null;
   approval_waiting: number;
   mode?: string | null; approval_policy?: string;
+}
+export interface Goal {
+  id: string; objective: string;
+  status: 'active' | 'paused' | 'blocked' | 'usage_limited' | 'budget_limited' | 'complete';
+  token_budget: number | null; tokens_used: number; estimated_requests: number;
+  time_used_seconds: number; created_at: number; updated_at: number;
 }
 export interface GitFile {path: string; index: string; worktree: string; conflict: boolean}
 export interface GitWorkspace {

@@ -31,6 +31,18 @@ export function sidebarRows(c: TuiController, width: number, height: number, now
   ];
   add('ATTENTION', issues.slice(0, 2), issues.slice(2), paint.warning, 0);
 
+  const goal = state.goal;
+  if (goal) {
+    const color = goal.status === 'active' ? paint.accent : goal.status === 'complete' ? paint.success : paint.warning;
+    const budget = goal.token_budget === null ? 'No limit' : number.format(goal.token_budget);
+    add('GOAL', [color(goal.status.replaceAll('_', ' ')), paint.info(compact(goal.objective))], [
+      valueRow('Tokens', `${number.format(goal.tokens_used)} / ${budget}`),
+      valueRow('Elapsed', duration(goal.time_used_seconds)),
+      ...(goal.estimated_requests ? [paint.warning(`${goal.estimated_requests} requests estimated`)] : []),
+      paint.muted('/goal · Manage'),
+    ], color, 1);
+  }
+
   const live = activityFor(c);
   if (live && !c.active) add('EXECUTION', [paint.secondary(live.label)], c.session.progress.summary ? [paint.info(compact(c.session.progress.summary))] : [], paint.secondary, 1);
   const items = plan.items ?? [];

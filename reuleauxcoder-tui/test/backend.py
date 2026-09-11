@@ -110,6 +110,21 @@ def emit(payload):
 
 def run():
     text = agent.messages[-1]["content"]
+    goal = agent.goal_controller.state
+    if goal is not None and goal.status == "active":
+        agent.goal_controller.record_usage(
+            goal.id,
+            {
+                "input_tokens": 100,
+                "cached_input_tokens": 80,
+                "output_tokens": 10,
+                "estimated": False,
+            },
+        )
+        if agent.goal_controller.state.tokens_used >= 60:
+            agent.goal_controller.update(status="complete")
+        emit(AssistantContentDelta("Goal checkpoint verified.\n"))
+        return "Goal checkpoint verified."
     if text == "exercise":
         emit(ReasoningDelta("reasoning retained", display_mode="hidden"))
         emit(

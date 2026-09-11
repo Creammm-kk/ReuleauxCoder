@@ -34,6 +34,7 @@ export class RuntimeClient extends EventEmitter {
     if (this.info.version !== 1 || this.catalog.some(item => !Array.isArray(item.parameters))) throw new Error('This TUI requires a backend with command form metadata. Update the Python package.');
     this.update(this.info.state);
     this.emit('initialized', this.info);
+    if (this.info.goals) this.update(decode(await this.peer.request('runtime.ready')));
   }
 
   private update(state: RuntimeState): void {
