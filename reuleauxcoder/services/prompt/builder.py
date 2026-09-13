@@ -102,6 +102,26 @@ def _rules_block() -> PromptBlock:
     )
 
 
+def _prose_block() -> PromptBlock:
+    return PromptBlock(
+        key="prose_discipline",
+        title="Prose Discipline",
+        zone=PromptZone.STATIC,
+        order=35,
+        body="""Technical prose (documentation, commit messages, code comments, pull request text, summaries) states the point directly in a plain, specific register:
+
+- Every sentence adds a fact, a decision, or a concrete next step.
+- No staging: not-X-but-Y contrast frames, one-line closers that restate the point, announced transitions ("let's dive in"), objections no one raised.
+- No inflation: significance dressing on ordinary facts, unnamed authority, sales language, decorative -ing riders, stock filler words (delve, testament, landscape, showcase, pivotal).
+- Formatting serves meaning: no decorative bold or emoji headings, sentence-case headings, prose over labeled lists that repeat their labels.
+- Plain verbs (is, has) over stand-ins (serves as, boasts, features); as many items as the meaning needs, not forced triads; periods and commas over dashes as universal connectors.
+- Standalone artifacts carry no chat residue (greetings, offers, "hope this helps") and no knowledge-limit disclaimers.
+- Never invent a name, number, date, quote, or citation. Ask for a missing detail or write the simpler sentence.
+
+User-configured voice or persona instructions override this register; the discipline targets default tells, not deliberate voice.""",
+    )
+
+
 def _runtime_context_protocol_block() -> PromptBlock:
     return PromptBlock(
         key="runtime_context_protocol",
@@ -239,6 +259,7 @@ def system_prompt(
     assembler.add(_identity_block())
     assembler.add(_tools_block(tools))
     assembler.add(_rules_block())
+    assembler.add(_prose_block())
     assembler.add(_runtime_context_protocol_block())
     assembler.add(_skills_block(skills_catalog))
     assembler.add(_user_instructions_block(user_system_append))

@@ -42,3 +42,12 @@ def test_system_prompt_contains_only_static_and_semi_static_blocks() -> None:
     assert prompt.index("# User Instructions") < prompt.index("# Active Mode")
     assert "# Environment" not in prompt
     assert "- Working directory: " not in prompt
+
+
+def test_system_prompt_includes_prose_discipline_block() -> None:
+    prompt = system_prompt([_Tool("read_file", "Read file")])
+
+    assert "# Prose Discipline" in prompt
+    assert prompt.index("# Rules") < prompt.index("# Prose Discipline")
+    assert prompt.index("# Prose Discipline") < prompt.index("# Runtime Context Protocol")
+    assert "not-X-but-Y" in prompt
