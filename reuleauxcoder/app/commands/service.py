@@ -240,12 +240,16 @@ class CommandService:
     def record_chat_failure(self, error: Exception) -> None:
         path = getattr(error, "llm_diagnostic_path", None)
         if path and self.session_id:
-            SessionStore(self.sessions_dir).append_system_message(
+            store = SessionStore(self.sessions_dir)
+            store.append_system_message(
                 self.session_id,
                 self.config.model,
                 f"[LLM_ERROR_DIAGNOSTIC] path={path} error={type(error).__name__}: {error}",
                 active_mode=getattr(self.agent, "active_mode", None),
             )
+            ledger = getattr(self.agent, "history_ledger", None)
+            if ledger is not None:
+                ledger.raise_floor(store.last_persisted_sequence(self.session_id))
 
     def _save_exit(self, *, progress=None) -> str | None:
         if (

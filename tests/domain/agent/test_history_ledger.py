@@ -35,6 +35,38 @@ def test_context_replacement_does_not_delete_prior_history_events() -> None:
     assert agent.messages == [{"role": "system", "content": "checkpoint"}]
 
 
+def test_raise_floor_reserves_sequences_without_emitting_events() -> None:
+    ledger = HistoryLedger()
+    ledger.append("session_lifecycle", {"state": "started"})
+
+    ledger.raise_floor(4)
+
+    assert ledger.last_sequence == 4
+    assert len(ledger.events) == 1
+    event = ledger.append("session_lifecycle", {"state": "resumed"})
+    assert event.seq == 5
+
+
+def test_raise_floor_never_lowers_the_current_floor() -> None:
+    ledger = HistoryLedger()
+    ledger.append("session_lifecycle", {"state": "started"})
+
+    ledger.raise_floor(0)
+    assert ledger.last_sequence == 1
+
+    ledger.raise_floor(1)
+    assert ledger.last_sequence == 1
+
+
+def test_raise_floor_rejects_invalid_floors() -> None:
+    ledger = HistoryLedger()
+
+    with pytest.raises(ValueError):
+        ledger.raise_floor(-1)
+    with pytest.raises(ValueError):
+        ledger.raise_floor(True)  # type: ignore[arg-type]
+
+
 def test_message_ledger_event_has_top_level_runtime_attribution(tmp_path) -> None:
     agent = Agent(llm=_LLM(), tools=[])
     agent.current_session_id = "session-1"

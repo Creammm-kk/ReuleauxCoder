@@ -461,11 +461,42 @@ class SessionStore:
         self._write_cursors: dict[str, _DirectoryWriteCursor] = {}
         self._projection = SessionInventoryProjection(self._sessions_dir)
         self._projection_issue: SessionRestoreIssue | None = None
+        self._seq_floors: dict[str, int] = {}
 
     @property
     def sessions_dir(self) -> Path:
         """Return the underlying session directory."""
         return self._sessions_dir
+
+    def last_persisted_sequence(self, session_id: str) -> int:
+        """Return the highest event sequence known to be persisted."""
+        try:
+            self._require_safe_session_id(session_id)
+        except SessionRestoreError:
+            return 0
+        return self._effective_seq_floor(session_id, 0)
+
+    def _effective_seq_floor(self, session_id: str, passed_floor: int) -> int:
+        floor = max(passed_floor, self._seq_floors.get(session_id, 0))
+        manifest_seq = self._read_manifest_last_event_seq(session_id)
+        if manifest_seq is not None and manifest_seq > floor:
+            floor = manifest_seq
+        return floor
+
+    def _read_manifest_last_event_seq(self, session_id: str) -> int | None:
+        try:
+            raw = (self._sessions_dir / session_id / "manifest.json").read_text(
+                encoding="utf-8"
+            )
+            data = json.loads(raw)
+        except (OSError, UnicodeError, json.JSONDecodeError):
+            return None
+        if not isinstance(data, dict):
+            return None
+        value = data.get("last_event_seq")
+        if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+            return value
+        return None
 
     def _ensure_sessions_root(self, *, create: bool) -> object | None:
         try:
@@ -920,6 +951,9 @@ class SessionStore:
                 ensure_message_token_counts([exit_message])
                 saved_messages.append(exit_message)
 
+            history_next_seq_floor = self._effective_seq_floor(
+                session_id, history_next_seq_floor
+            )
             ledger = HistoryLedger(
                 history_events or (),
                 next_seq_floor=history_next_seq_floor,
@@ -1034,6 +1068,10 @@ class SessionStore:
             self._finish_projection_update(
                 session,
                 projection_was_ready=projection_was_ready,
+            )
+            self._seq_floors[session_id] = max(
+                self._seq_floors.get(session_id, 0),
+                ledger.last_sequence,
             )
             return session_id
 
@@ -2907,6 +2945,10 @@ class SessionStore:
         session.replay_envelope = replay
         session.history_events = events
         session.history_next_seq_floor = history_result.next_seq_floor
+        self._seq_floors[session.id] = max(
+            self._seq_floors.get(session.id, 0),
+            history_result.next_seq_floor,
+        )
         session.history_behavior_projection_safe = (
             not history_issues
             and not history_restore_degraded

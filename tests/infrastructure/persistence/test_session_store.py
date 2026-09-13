@@ -2931,6 +2931,60 @@ def test_session_store_append_system_message_updates_existing_session(
     assert isinstance(loaded.messages[-1].get(MESSAGE_TOKEN_KEY), int)
 
 
+def test_save_exit_does_not_reuse_store_side_minted_sequence(
+    tmp_path: Path,
+) -> None:
+    store = SessionStore(tmp_path)
+    session_id = store.save(
+        messages=[{"role": "user", "content": "hello"}], model="gpt-4o"
+    )
+    loaded = store.load(session_id)
+    assert loaded is not None
+    live_events = list(loaded.history_events)
+    stale_floor = loaded.history_next_seq_floor
+
+    store.append_system_message(
+        session_id,
+        "gpt-4o",
+        "[LLM_ERROR_DIAGNOSTIC] path=/tmp/demo.json error=BadRequestError: boom",
+    )
+    after_diagnostic = store.load(session_id)
+    assert after_diagnostic is not None
+    diagnostic_seq = max(
+        event.seq for event in after_diagnostic.history_events
+    )
+    assert diagnostic_seq > stale_floor
+
+    store.save(
+        messages=[
+            {"role": "user", "content": "hello"},
+            {"role": "assistant", "content": "hi"},
+        ],
+        model="gpt-4o",
+        session_id=session_id,
+        is_exit=True,
+        history_events=live_events,
+        history_next_seq_floor=stale_floor,
+        events_already_persisted=True,
+    )
+
+    reloaded = store.load(session_id)
+    assert reloaded is not None
+    seqs = [event.seq for event in reloaded.history_events]
+    assert seqs == sorted(seqs)
+    assert len(seqs) == len(set(seqs))
+    assert not any(
+        issue.phase == "history_decode" for issue in reloaded.restore_issues
+    )
+    exit_event = next(
+        event
+        for event in reloaded.history_events
+        if event.kind == "message_committed"
+        and event.payload.get("source") == "session_exit"
+    )
+    assert exit_event.seq > diagnostic_seq
+
+
 def test_session_store_load_backfills_missing_message_token_counts(
     tmp_path: Path,
 ) -> None:

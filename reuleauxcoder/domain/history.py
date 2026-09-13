@@ -117,6 +117,18 @@ class HistoryLedger:
         with self._lock:
             return self._next_seq - 1
 
+    def raise_floor(self, floor: int) -> None:
+        """Reserve every sequence number up to floor without emitting events."""
+        if (
+            not isinstance(floor, int)
+            or isinstance(floor, bool)
+            or floor < 0
+        ):
+            raise ValueError("sequence floor must be a non-negative integer")
+        with self._lock:
+            if floor >= self._next_seq:
+                self._next_seq = floor + 1
+
     def append(
         self,
         kind: str,
