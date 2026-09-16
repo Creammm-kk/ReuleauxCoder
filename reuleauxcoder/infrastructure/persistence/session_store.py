@@ -407,7 +407,7 @@ class _HistoryLoadResult:
     events: tuple[HistoryEvent, ...]
     issues: tuple[SessionRestoreIssue, ...]
     next_seq_floor: int
-
+    repaired: bool = False
 
 def _reject_non_finite_json(_value: str) -> None:
     raise ValueError("non-finite JSON number")
@@ -2642,6 +2642,13 @@ class SessionStore:
             trusted_last_event_seq=trusted_last_event_seq,
         )
         events = list(history_result.events)
+
+        if history_result.repaired:
+            self._report_progress(
+                "Repairing legacy store-side history sequence reuse..."
+            )
+            self._atomic_replace_history(events_path, events)
+
         history_issues = history_result.issues
         if expected_event_count == 0:
             history_issues = tuple(
@@ -3103,6 +3110,61 @@ class SessionStore:
                 applied += 1
         return recovered, applied
 
+    @staticmethod
+    def _repair_legacy_store_side_sequence_reuse(
+        events: list[HistoryEvent],
+    ) -> tuple[list[HistoryEvent], bool]:
+        """Repair the exact sequence-reuse pattern produced by old store-side mints."""
+        repaired = list(events)
+        changed = False
+        index = 1
+
+        while index + 2 < len(repaired):
+            diagnostic = repaired[index - 1]
+            exit_message = repaired[index]
+            exit_lifecycle = repaired[index + 1]
+            following = repaired[index + 2]
+
+            diagnostic_message = diagnostic.payload.get("message")
+            diagnostic_content = (
+                diagnostic_message.get("content")
+                if isinstance(diagnostic_message, dict)
+                else None
+            )
+
+            matches_legacy_bug = (
+                diagnostic.kind == "message_committed"
+                and diagnostic.payload.get("source") == "session_diagnostic"
+                and isinstance(diagnostic_content, str)
+                and "[LLM_ERROR_DIAGNOSTIC]" in diagnostic_content
+                and exit_message.kind == "message_committed"
+                and exit_message.payload.get("source") == "session_exit"
+                and exit_message.seq == diagnostic.seq
+                and exit_lifecycle.kind == "session_lifecycle"
+                and exit_lifecycle.payload.get("source") == "session_exit"
+                and exit_lifecycle.payload.get("message_event_id")
+                == exit_message.event_id
+                and exit_lifecycle.seq == diagnostic.seq + 1
+                and following.seq == diagnostic.seq + 3
+            )
+
+            if not matches_legacy_bug:
+                index += 1
+                continue
+
+            repaired[index] = replace(
+                exit_message,
+                seq=diagnostic.seq + 1,
+            )
+            repaired[index + 1] = replace(
+                exit_lifecycle,
+                seq=diagnostic.seq + 2,
+            )
+            changed = True
+            index += 3
+
+        return repaired, changed
+    
     def _load_history_events(
         self,
         events_path: Path,
@@ -3111,10 +3173,10 @@ class SessionStore:
         trusted_last_event_seq: int = 0,
     ) -> _HistoryLoadResult:
         """Load history, retaining safe facts for every recoverable failure."""
+        decoded_events: list[HistoryEvent] = []
         events: list[HistoryEvent] = []
         issues = _RestoreIssueCollector()
-        seen_event_ids: set[str] = set()
-        previous_seq = 0
+        seen_decoded_event_ids: set[str] = set()
         physical_line_count = 0
         decoded_sequence_floor = 0
 
@@ -3132,18 +3194,20 @@ class SessionStore:
             return _HistoryLoadResult(
                 (), issues.facts(), max(0, trusted_last_event_seq)
             )
+
         if events_status is None:
             record_issue("history_read", "FileNotFoundError")
             return _HistoryLoadResult(
                 (), issues.facts(), max(0, trusted_last_event_seq)
             )
+
         if not stat.S_ISREG(events_status.st_mode):
             record_issue("history_read", "NotAFileError")
             return _HistoryLoadResult(
                 (), issues.facts(), max(0, trusted_last_event_seq)
             )
-        total_bytes = events_status.st_size
 
+        total_bytes = events_status.st_size
         total_mb = total_bytes / (1024 * 1024)
         self._report_progress(f"Reading history ledger ({total_mb:.1f} MB)...")
         started = time.monotonic()
@@ -3162,12 +3226,14 @@ class SessionStore:
                 read_bytes += len(line)
                 physical_line_count += 1
                 failure_type: str | None = None
+
                 try:
                     payload = json.loads(
                         line,
                         parse_constant=_reject_non_finite_json,
                     )
                     _validate_strict_utf8_tree(payload)
+
                     if isinstance(payload, dict):
                         raw_seq = payload.get("seq")
                         if (
@@ -3177,19 +3243,21 @@ class SessionStore:
                             and raw_seq <= _MAX_PERSISTED_COUNTER
                         ):
                             decoded_sequence_floor = max(
-                                decoded_sequence_floor, raw_seq
+                                decoded_sequence_floor,
+                                raw_seq,
                             )
+
                     self._validate_history_event_payload(
                         payload,
                         expected_session_id=expected_session_id,
                     )
                     event = HistoryEvent.from_dict(payload)
-                    if (
-                        event.event_id in seen_event_ids
-                        or event.seq <= previous_seq
-                    ):
-                        raise ValueError("history event ordering is invalid")
+
+                    if event.event_id in seen_decoded_event_ids:
+                        raise ValueError("history event identity is duplicated")
+
                     event, _ = self._compact_legacy_request_event(event)
+
                 except (
                     AttributeError,
                     json.JSONDecodeError,
@@ -3201,25 +3269,44 @@ class SessionStore:
                     ValueError,
                 ) as error:
                     failure_type = _safe_error_type(error)
+
                 if failure_type is not None:
                     record_issue("history_decode", failure_type)
                     continue
-                events.append(event)
-                seen_event_ids.add(event.event_id)
-                previous_seq = event.seq
+
+                decoded_events.append(event)
+                seen_decoded_event_ids.add(event.event_id)
+
                 if total_bytes and time.monotonic() - started >= 0.5:
                     percent = min(100, int(read_bytes * 100 / total_bytes))
                     if percent >= next_percent and percent < 100:
                         self._report_progress(
                             f"Reading history ledger... {percent}% "
-                            f"({len(events)} event(s))."
+                            f"({len(decoded_events)} event(s))."
                         )
                         next_percent = (percent // 10 + 1) * 10
+
+        decoded_events, repaired = (
+            self._repair_legacy_store_side_sequence_reuse(decoded_events)
+        )
+
+        seen_event_ids: set[str] = set()
+        previous_seq = 0
+
+        for event in decoded_events:
+            if event.event_id in seen_event_ids or event.seq <= previous_seq:
+                record_issue("history_decode", "ValueError")
+                continue
+
+            events.append(event)
+            seen_event_ids.add(event.event_id)
+            previous_seq = event.seq
 
         self._report_progress(
             f"History ledger ready ({len(events)} event(s), "
             f"{time.monotonic() - started:.1f}s)."
         )
+
         return _HistoryLoadResult(
             tuple(events),
             issues.facts(),
@@ -3229,7 +3316,9 @@ class SessionStore:
                 physical_line_count,
                 max((event.seq for event in events), default=0),
             ),
+            repaired=repaired,
         )
+    
 
     @staticmethod
     def _validate_history_event_payload(
